@@ -28,7 +28,7 @@ export default function BurnCancel() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4">
-      <div className="w-full max-w-md text-center animate-fade-in-up">
+      <div className="w-full max-w-md text-center">
         <div className="inline-flex h-20 w-20 items-center justify-center rounded-2xl bg-surface border border-border mb-8">
           <ShieldX className="h-10 w-10 text-text-dim" />
         </div>

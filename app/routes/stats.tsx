@@ -1,4 +1,6 @@
-import { BarChart2 } from "lucide-react";
+import { useState } from "react";
+import { BarChart2, Flame } from "lucide-react";
+import { Link } from "react-router";
 import {
   LineChart,
   Line,
@@ -15,13 +17,26 @@ import {
   Legend,
 } from "recharts";
 import {
-  wasteOverTimeData,
-  wasteByMethodData,
-  wasteByAmountTierData,
-  hourlyDistributionData,
   getPlatformStats,
-} from "~/lib/dummy-data";
-import { formatCompactCurrency, WASTE_METHODS } from "~/lib/utils";
+  getWasteOverTimePeriod,
+  getWasteByMethod,
+  getWasteByAmountTier,
+  getWasteByDayOfWeek,
+} from "~/lib/queries.server";
+import { formatCompactCurrency, cn } from "~/lib/utils";
+import type { Route } from "./+types/stats";
+
+export function meta() {
+  return [
+    { title: "Analytics — WasteYourMoney" },
+    { name: "description", content: "Every cent the world has burned, visualized. Charts, trends, and breakdowns of global money waste." },
+    { property: "og:title", content: "Analytics — WasteYourMoney" },
+    { property: "og:description", content: "Every cent the world has burned, visualized." },
+    { property: "og:type", content: "website" },
+    { property: "og:site_name", content: "WasteYourMoney" },
+    { name: "twitter:card", content: "summary" },
+  ];
+}
 
 const chartTooltipStyle = {
   contentStyle: {
@@ -35,11 +50,60 @@ const chartTooltipStyle = {
   labelStyle: { color: "#9C978E" },
 };
 
-export default function Stats() {
-  const stats = getPlatformStats();
+export function loader() {
+  return {
+    stats: getPlatformStats(),
+    wasteOverTime7d: getWasteOverTimePeriod("7d"),
+    wasteOverTime30d: getWasteOverTimePeriod("30d"),
+    wasteOverTime3m: getWasteOverTimePeriod("3m"),
+    wasteOverTimeAll: getWasteOverTimePeriod("all"),
+    wasteByMethodData: getWasteByMethod(),
+    wasteByAmountTierData: getWasteByAmountTier(),
+    wasteByDayOfWeekData: getWasteByDayOfWeek(),
+  };
+}
+
+type Period = "7d" | "30d" | "3m" | "all";
+
+export default function Stats({ loaderData }: Route.ComponentProps) {
+  const { stats, wasteOverTime7d, wasteOverTime30d, wasteOverTime3m, wasteOverTimeAll, wasteByMethodData, wasteByAmountTierData, wasteByDayOfWeekData } = loaderData;
+  const [period, setPeriod] = useState<Period>("30d");
+
+  const periodData = {
+    "7d": wasteOverTime7d,
+    "30d": wasteOverTime30d,
+    "3m": wasteOverTime3m,
+    "all": wasteOverTimeAll,
+  };
+  const wasteOverTimeData = periodData[period];
 
   return (
     <div className="min-h-screen">
+      {/* ─── NAV ─── */}
+      <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
+          <Link to="/" className="flex items-center gap-2.5 group">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/20 transition-colors">
+              <Flame className="h-5 w-5 text-primary" />
+            </div>
+            <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight">
+              Waste<span className="text-primary">Your</span>Money
+            </span>
+          </Link>
+          <div className="flex items-center gap-1">
+            <Link to="/feed" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Live Feed</Link>
+            <Link to="/leaderboard" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Leaderboard</Link>
+            <Link
+              to="/burn"
+              className="ml-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-sm font-bold text-background hover:bg-primary-hover transition-all hover:shadow-lg hover:shadow-primary-glow"
+            >
+              <Flame className="h-4 w-4" />
+              Burn
+            </Link>
+          </div>
+        </div>
+      </nav>
+
       {/* ─── HEADER ─── */}
       <div className="border-b border-border bg-surface/30">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
@@ -48,7 +112,7 @@ export default function Stats() {
               <BarChart2 className="h-5 w-5 text-primary" />
             </div>
             <h1 className="font-[family-name:var(--font-display)] text-3xl sm:text-4xl font-extrabold">
-              Global Stats
+              Analytics
             </h1>
           </div>
           <p className="text-text-muted text-sm ml-[44px]">
@@ -60,7 +124,7 @@ export default function Stats() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
 
         {/* ─── BIG STATS ROW ─── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10 stagger-children">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
           {[
             {
               label: "Total Incinerated",
@@ -79,7 +143,7 @@ export default function Stats() {
             },
             {
               label: "Avg Per Event",
-              value: `$${(stats.totalWasted / stats.totalEvents).toFixed(2)}`,
+              value: `₹${(stats.totalWasted / stats.totalEvents).toFixed(2)}`,
               sub: "Per waste transaction",
             },
           ].map((stat) => (
@@ -100,27 +164,54 @@ export default function Stats() {
 
         {/* ─── WASTE OVER TIME ─── */}
         <div className="rounded-2xl border border-border bg-surface p-6 mb-6">
-          <div className="mb-1">
+          <div className="flex items-start justify-between mb-1">
             <h3 className="font-[family-name:var(--font-display)] text-xl font-bold">
               Waste Over Time
             </h3>
+            <div className="flex gap-1">
+              {(["7d", "30d", "3m", "all"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-bold transition-all border",
+                    period === p
+                      ? "bg-primary/10 border-primary/30 text-primary"
+                      : "bg-surface-elevated border-border text-text-dim hover:text-text"
+                  )}
+                >
+                  {p === "all" ? "All" : p.toUpperCase()}
+                </button>
+              ))}
+            </div>
           </div>
-          <p className="text-xs text-text-dim mb-6">Monthly total dollars incinerated</p>
+          <p className="text-xs text-text-dim mb-6">
+            {period === "7d" ? "Daily totals — last 7 days" :
+             period === "30d" ? "Daily totals — last 30 days" :
+             period === "3m" ? "Weekly totals — last 3 months" :
+             "Monthly totals — all time"}
+          </p>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={wasteOverTimeData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2A2A27" />
-                <XAxis dataKey="month" stroke="#6B6760" fontSize={12} tickLine={false} />
+                <XAxis
+                  dataKey="label"
+                  stroke="#6B6760"
+                  fontSize={11}
+                  tickLine={false}
+                  interval={period === "7d" ? 0 : period === "30d" ? 4 : "preserveStartEnd"}
+                />
                 <YAxis
                   stroke="#6B6760"
                   fontSize={12}
-                  tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`}
+                  tickFormatter={(v) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`}
                   tickLine={false}
                 />
                 <Tooltip
                   {...chartTooltipStyle}
-                  formatter={(value: number) => [
-                    `$${value.toLocaleString()}`,
+                  formatter={(value) => [
+                    `₹${Number(value).toLocaleString("en-IN")}`,
                     "Burned",
                   ]}
                 />
@@ -129,7 +220,7 @@ export default function Stats() {
                   dataKey="amount"
                   stroke="#FF6B35"
                   strokeWidth={3}
-                  dot={{ fill: "#FF6B35", r: 5, strokeWidth: 2, stroke: "#141412" }}
+                  dot={period === "7d" ? { fill: "#FF6B35", r: 5, strokeWidth: 2, stroke: "#141412" } : false}
                   activeDot={{
                     r: 7,
                     fill: "#FF6B35",
@@ -171,8 +262,8 @@ export default function Stats() {
                   </Pie>
                   <Tooltip
                     {...chartTooltipStyle}
-                    formatter={(value: number) => [
-                      `$${value.toLocaleString()}`,
+                    formatter={(value) => [
+                      `₹${Number(value).toLocaleString("en-IN")}`,
                       "Burned",
                     ]}
                   />
@@ -203,7 +294,7 @@ export default function Stats() {
                   <YAxis stroke="#6B6760" fontSize={12} tickLine={false} />
                   <Tooltip
                     {...chartTooltipStyle}
-                    formatter={(value: number) => [`${value}`, "Events"]}
+                    formatter={(value) => [`${value}`, "Events"]}
                   />
                   <Bar
                     dataKey="count"
@@ -216,25 +307,35 @@ export default function Stats() {
           </div>
         </div>
 
-        {/* ─── HOURLY DISTRIBUTION ─── */}
+        {/* ─── WASTE BY DAY OF WEEK ─── */}
         <div className="rounded-2xl border border-border bg-surface p-6">
           <h3 className="font-[family-name:var(--font-display)] text-xl font-bold mb-1">
-            When People Waste
+            Waste by Day of Week
           </h3>
           <p className="text-xs text-text-dim mb-6">
-            Hourly distribution — apparently 6pm is when wallets catch fire
+            Which day sees the most money torched — pick your poison
           </p>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={hourlyDistributionData}>
+              <BarChart data={wasteByDayOfWeekData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2A2A27" />
-                <XAxis dataKey="hour" stroke="#6B6760" fontSize={11} tickLine={false} />
-                <YAxis stroke="#6B6760" fontSize={12} tickLine={false} />
+                <XAxis dataKey="day" stroke="#6B6760" fontSize={12} tickLine={false} />
+                <YAxis
+                  stroke="#6B6760"
+                  fontSize={12}
+                  tickLine={false}
+                  tickFormatter={(v) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`}
+                />
                 <Tooltip
                   {...chartTooltipStyle}
-                  formatter={(value: number) => [`${value} events`, "Burns"]}
+                  formatter={(value, name) => [
+                    name === "total"
+                      ? `₹${Number(value).toLocaleString("en-IN")}`
+                      : `${value}`,
+                    name === "total" ? "Burned" : "Events",
+                  ]}
                 />
-                <Bar dataKey="count" fill="#FFB800" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="total" fill="#FFB800" radius={[4, 4, 0, 0]} name="total" />
               </BarChart>
             </ResponsiveContainer>
           </div>

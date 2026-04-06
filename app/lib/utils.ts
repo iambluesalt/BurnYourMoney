@@ -15,24 +15,25 @@ export function formatINR(amount: number): string {
 }
 
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("en-IN", {
     style: "currency",
-    currency: "USD",
+    currency: "INR",
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
 }
 
 export function formatCompactCurrency(amount: number): string {
-  if (amount >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
-  if (amount >= 1_000) return `$${(amount / 1_000).toFixed(1)}K`;
+  if (amount >= 1_00_00_000) return `₹${(amount / 1_00_00_000).toFixed(1)}Cr`;
+  if (amount >= 1_00_000) return `₹${(amount / 1_00_000).toFixed(1)}L`;
+  if (amount >= 1_000) return `₹${(amount / 1_000).toFixed(1)}K`;
   return formatCurrency(amount);
 }
 
 export function formatBigCounter(amount: number): string {
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("en-IN", {
     style: "currency",
-    currency: "USD",
+    currency: "INR",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
@@ -60,6 +61,6 @@ export const WASTE_METHODS = {
 
 export type WasteMethod = keyof typeof WASTE_METHODS;
 
-export function getMethodInfo(method: WasteMethod) {
-  return WASTE_METHODS[method];
+export function getMethodInfo(method: WasteMethod | string) {
+  return WASTE_METHODS[method as WasteMethod] ?? WASTE_METHODS.burn;
 }

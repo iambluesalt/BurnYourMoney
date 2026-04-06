@@ -101,32 +101,93 @@ ORDER BY totalWasted DESC
 - [x] Payment verification — on successful payment, verify signature server-side (`razorpay_order_id` + `razorpay_payment_id` + `razorpay_signature`), insert `WasteEvent` into DB. Success + cancel pages (`/burn/success`, `/burn/cancel`)
 - [x] Rate limiting — prevent spam burns (e.g. max 10 burns per IP per hour). Environment variables: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`
 
-### Phase 3 — Live Data & Polish (4 tasks)
+### Phase 3 — Live Data & Polish (4 tasks) ✅
 
-- [ ] Replace dummy data in all routes (`/feed`, `/leaderboard`, `/stats`, `/wall-of-waste`, `/` counter) with real DB queries via Drizzle
-- [ ] Real-time updates — SSE or short polling for live waste counter on landing page and feed page
-- [ ] Social sharing — generate a shareable "burn receipt" card (OG image or screenshot-friendly component) after each burn
-- [ ] Deployment — SQLite persistence in Docker volume, env var setup, SEO meta tags per page
+- [x] Replace dummy data in all routes (`/feed`, `/leaderboard`, `/stats`, `/wall-of-waste`, `/` counter) with real DB queries via Drizzle
+- [x] Real-time updates — SSE or short polling for live waste counter on landing page and feed page
+- [x] Social sharing — generate a shareable "burn receipt" card (OG image or screenshot-friendly component) after each burn
+- [x] Deployment — SQLite persistence in Docker volume, env var setup, SEO meta tags per page
+
+---
+
+## Phase 3 — Detailed Breakdown
+
+### 3.2 Real-Time Updates
+
+**Goal:** Landing page counter and feed page update automatically when new burns happen, without full page reload.
+
+**Approach:** Server-Sent Events (SSE) — lightweight, unidirectional, native browser support, no extra deps.
+
+| Step | Task | Files |
+|------|------|-------|
+| 1 | Create SSE resource route (`/api/stream`) that holds open a connection and sends new events + updated total counter on an interval (poll DB every 3–5s for new events since last check) | `app/routes/api.stream.ts` (new) |
+| 2 | Build `useSSE` or `useEventSource` hook that connects to `/api/stream`, reconnects on drop, and exposes latest events + totalWasted | `app/lib/use-live-data.ts` (new) |
+| 3 | Wire into landing page — live counter animates when totalWasted changes, ticker shows genuinely new burns | `app/routes/landing.tsx` |
+| 4 | Wire into feed page — new events prepend to the list with an entrance animation, "X new burns" toast if user has scrolled down | `app/routes/feed.tsx` |
+| 5 | Graceful degradation — if SSE fails or JS disabled, pages still work with loader data (already the case) | — |
+
+**Notes:**
+- SSE route should set `Cache-Control: no-cache`, `Content-Type: text/event-stream`
+- Use `lastEventId` / timestamp cursor to avoid sending duplicates
+- Close connection on client unmount to avoid leak
+
+### 3.3 Social Sharing — Burn Receipt
+
+**Goal:** After a successful burn, user gets a shareable "receipt" card they can screenshot or share via link.
+
+| Step | Task | Files |
+|------|------|-------|
+| 1 | Create a standalone receipt component — dark card with burn amount, method icon, nickname, message, timestamp, QR-style pattern or border. Optimized for 1200×630 (OG image ratio) and mobile screenshot | `app/routes/burn-success.tsx` (enhance existing receipt section) |
+| 2 | Create an OG image route (`/burn/receipt/:id`) that returns a static HTML page with just the receipt card, sized for screenshots, with OG meta tags pointing to itself | `app/routes/burn-receipt.tsx` (new) |
+| 3 | Add share buttons on `/burn/success` — copy link, share to Twitter/X (pre-filled text: "I just {method.verb} {amount} on WasteYourMoney"), generic Web Share API fallback | `app/routes/burn-success.tsx` |
+| 4 | Add `<meta>` OG tags to the receipt route: `og:title`, `og:description`, `og:image` (point to a simple server-rendered card or placeholder), `og:url` | `app/routes/burn-receipt.tsx` |
+
+**Notes:**
+- Keep it server-rendered HTML+CSS, no canvas/puppeteer — simple and fast
+- Receipt page is public (no auth) so anyone with the link can view it
+- Twitter card format: `summary_large_image`
+
+### 3.4 Deployment & SEO
+
+**Goal:** Production-ready Docker setup, proper env config, SEO meta on every page.
+
+| Step | Task | Files |
+|------|------|-------|
+| 1 | Create `Dockerfile` — multi-stage Node build, copy `data/` dir as volume mount point, run migrations on startup | `Dockerfile` (new) |
+| 2 | Create `docker-compose.yml` — service definition, volume for `data/waste.db`, env vars from `.env` file | `docker-compose.yml` (new) |
+| 3 | Create `.env.example` with all required env vars documented (RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, NODE_ENV, PORT) | `.env.example` (new) |
+| 4 | Add startup script that runs `drizzle-kit push` (or migration) before starting server, ensuring DB schema is current | `scripts/start.sh` (new), update `package.json` scripts |
+| 5 | Add SEO `<meta>` tags per route using React Router's `meta` export — title, description, OG tags for `/`, `/feed`, `/leaderboard`, `/stats`, `/wall-of-waste`, `/burn` | All route files |
+| 6 | Add `robots.txt` and `sitemap.xml` resource routes | `app/routes/robots[.]txt.ts`, `app/routes/sitemap[.]xml.ts` (new) |
+
+**Notes:**
+- SQLite DB must persist across container restarts → Docker named volume on `data/`
+- `.dockerignore` to exclude `node_modules`, `.env`, `data/waste.db`
+- Health check endpoint (optional): simple `GET /api/health` returning 200
 
 ---
 
 ## Route Map
 
-| Route               | Status | Description                     |
-| ------------------- | ------ | ------------------------------- |
-| `/`                 | Done   | Landing page                    |
-| `/feed`             | Done   | Live waste feed                 |
-| `/leaderboard`      | Done   | Top wasters                     |
-| `/stats`            | Done   | Global charts                   |
-| `/wall-of-waste`    | Done   | Hall of fame                    |
-| `/burn`             | Done   | Razorpay checkout flow          |
-| `/burn/verify`      | Done   | Payment signature verification  |
-| `/burn/success`     | Done   | Post-payment confirmation       |
-| `/burn/cancel`      | Done   | Payment cancelled               |
+| Route               | Status  | Description                     |
+| ------------------- | ------- | ------------------------------- |
+| `/`                 | Done    | Landing page (real DB data)     |
+| `/feed`             | Done    | Live waste feed (real DB data)  |
+| `/leaderboard`      | Done    | Top wasters (real DB data)      |
+| `/stats`            | Done    | Global charts (real DB data)    |
+| `/wall-of-waste`    | Done    | Hall of fame (real DB data)     |
+| `/burn`             | Done    | Razorpay checkout flow          |
+| `/burn/verify`      | Done    | Payment signature verification  |
+| `/burn/success`     | Done    | Post-payment confirmation       |
+| `/burn/cancel`      | Done    | Payment cancelled               |
+| `/api/stream`       | Done    | SSE endpoint for live updates   |
+| `/burn/receipt/:id` | Done    | Shareable burn receipt card      |
+| `/robots.txt`       | Done    | SEO robots file                 |
+| `/sitemap.xml`      | Done    | SEO sitemap                     |
 
 ---
 
-## File Structure (Current)
+## File Structure (Current + Planned)
 
 ```
 app/
@@ -137,23 +198,33 @@ app/
 │   ├── db.server.ts           # Drizzle client singleton (WAL mode)
 │   ├── schema.server.ts       # Drizzle table definitions
 │   ├── utils.ts               # formatCurrency, formatINR, WASTE_METHODS, cn(), etc.
+│   ├── queries.server.ts      # All Drizzle DB queries (feed, leaderboard, stats, etc.)
 │   ├── razorpay.server.ts     # Razorpay client + signature verification
 │   ├── rate-limit.server.ts   # In-memory IP rate limiter (10/hr)
-│   └── dummy-data.ts          # Static dummy data (to be replaced by DB)
+│   ├── use-live-data.ts       # useEventSource hook for SSE live updates
+│   └── dummy-data.ts          # Static dummy data (legacy, no longer imported by routes)
 └── routes/
-    ├── landing.tsx            # Done
-    ├── feed.tsx               # Done
+    ├── landing.tsx            # Done — live counter via SSE
+    ├── feed.tsx               # Done — live prepend via SSE
     ├── leaderboard.tsx        # Done
     ├── stats.tsx              # Done
     ├── wall-of-waste.tsx      # Done
     ├── burn.tsx               # Done — Razorpay checkout flow
     ├── burn-verify.tsx        # Done — Payment verification API
-    ├── burn-success.tsx       # Done — Post-payment confirmation
-    └── burn-cancel.tsx        # Done — Payment cancelled
+    ├── burn-success.tsx       # Done — Post-payment confirmation + share buttons
+    ├── burn-cancel.tsx        # Done — Payment cancelled
+    ├── burn-receipt.tsx       # Done — Shareable receipt card with OG tags
+    ├── api.stream.ts          # Done — SSE resource route for live updates
+    ├── robots[.]txt.ts        # Done — SEO robots.txt
+    └── sitemap[.]xml.ts       # Done — SEO sitemap
 data/
 └── waste.db                   # SQLite database (gitignored)
 scripts/
-└── seed.ts                    # DB seed script
+├── seed.ts                    # DB seed script
+└── start.sh                   # Done — Startup script (migrate + serve)
+Dockerfile                     # Done — Multi-stage production build
+docker-compose.yml             # Done — Service + volume config
+.env.example                   # Done — Documented env template
 drizzle.config.ts              # Drizzle Kit config
 ```
 

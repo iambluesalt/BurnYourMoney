@@ -1,12 +1,38 @@
 import { Link } from "react-router";
 import { ArrowRight, Flame, TrendingUp, Users, Zap } from "lucide-react";
-import { wasteEvents, wallOfWaste, getPlatformStats } from "~/lib/dummy-data";
+import { getRecentEvents, getTopSingleBurns, getPlatformStats } from "~/lib/queries.server";
 import { formatCurrency, formatCompactCurrency, formatBigCounter, timeAgo, getMethodInfo } from "~/lib/utils";
+import { useLiveData } from "~/lib/use-live-data";
+import type { Route } from "./+types/landing";
 
-export default function Landing() {
-  const stats = getPlatformStats();
-  const recentEvents = wasteEvents.slice(0, 8);
-  const topWastes = wallOfWaste.slice(0, 3);
+export function meta() {
+  return [
+    { title: "WasteYourMoney — Burn Real Money For No Reason" },
+    { name: "description", content: "The internet's most honest transaction. Pay real money via Razorpay. Get absolutely nothing. Watch it burn on the public leaderboard." },
+    { property: "og:title", content: "WasteYourMoney — Burn Real Money For No Reason" },
+    { property: "og:description", content: "Pay real money. Get absolutely nothing. Climb the leaderboard." },
+    { property: "og:type", content: "website" },
+    { property: "og:site_name", content: "WasteYourMoney" },
+    { name: "twitter:card", content: "summary_large_image" },
+    { name: "twitter:title", content: "WasteYourMoney — Burn Real Money For No Reason" },
+    { name: "twitter:description", content: "Pay real money. Get absolutely nothing. Climb the leaderboard." },
+  ];
+}
+
+export function loader() {
+  return {
+    stats: getPlatformStats(),
+    recentEvents: getRecentEvents(8),
+    topWastes: getTopSingleBurns(3),
+  };
+}
+
+export default function Landing({ loaderData }: Route.ComponentProps) {
+  const { stats: initialStats, recentEvents, topWastes } = loaderData;
+  const { stats, newEvents } = useLiveData(initialStats);
+
+  // Merge new SSE events into ticker display
+  const tickerEvents = [...newEvents, ...recentEvents].slice(0, 16);
 
   return (
     <div className="min-h-screen overflow-hidden">
@@ -21,25 +47,16 @@ export default function Landing() {
               Waste<span className="text-primary">Your</span>Money
             </span>
           </Link>
-          <div className="flex items-center gap-2">
-            <Link
-              to="/feed"
-              className="px-4 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors"
-            >
-              Live Feed
-            </Link>
-            <Link
-              to="/leaderboard"
-              className="px-4 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors"
-            >
-              Leaderboard
-            </Link>
+          <div className="flex items-center gap-1">
+            <Link to="/feed" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Live Feed</Link>
+            <Link to="/leaderboard" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Leaderboard</Link>
+            <Link to="/analytics" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Analytics</Link>
             <Link
               to="/burn"
-              className="ml-2 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-sm font-bold text-background hover:bg-primary-hover transition-all hover:shadow-lg hover:shadow-primary-glow"
+              className="ml-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-sm font-bold text-background hover:bg-primary-hover transition-all hover:shadow-lg hover:shadow-primary-glow"
             >
               <Flame className="h-4 w-4" />
-              Waste Now
+              Burn
             </Link>
           </div>
         </div>
@@ -53,7 +70,7 @@ export default function Landing() {
 
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-20 pb-16 text-center">
           {/* Label */}
-          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/25 bg-primary/5 text-primary text-sm font-medium mb-8 animate-fade-in-up">
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-primary/25 bg-primary/5 text-primary text-sm font-medium mb-8">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
@@ -62,19 +79,19 @@ export default function Landing() {
           </div>
 
           {/* Headline */}
-          <h1 className="font-[family-name:var(--font-display)] text-6xl sm:text-8xl lg:text-[96px] font-extrabold tracking-tight leading-[0.92] mb-8 animate-fade-in-up" style={{ animationDelay: "0.05s" }}>
+          <h1 className="font-[family-name:var(--font-display)] text-6xl sm:text-8xl lg:text-[96px] font-extrabold tracking-tight leading-[0.92] mb-8">
             Burn Your Money
             <br />
             <span className="fire-glow-intense">Get Nothing Back</span>
           </h1>
 
-          <p className="mx-auto max-w-xl text-lg sm:text-xl text-text-muted leading-relaxed mb-12 animate-fade-in-up" style={{ animationDelay: "0.1s" }}>
+          <p className="mx-auto max-w-xl text-lg sm:text-xl text-text-muted leading-relaxed mb-12">
             The most honest transaction on the internet. Pay real money. Receive
             absolutely nothing. Climb the leaderboard. You were warned.
           </p>
 
           {/* Big CTA */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16 animate-fade-in-up" style={{ animationDelay: "0.15s" }}>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
             <Link
               to="/burn"
               className="group flex items-center gap-3 px-10 py-4 rounded-2xl bg-primary text-lg font-extrabold text-background hover:bg-primary-hover transition-all hover:shadow-xl hover:shadow-primary-glow"
@@ -84,15 +101,15 @@ export default function Landing() {
               <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
             </Link>
             <Link
-              to="/wall-of-waste"
+              to="/leaderboard"
               className="flex items-center gap-2 px-8 py-4 rounded-2xl border border-border text-text-muted font-semibold hover:text-text hover:bg-surface transition-all"
             >
-              See The Biggest Burns
+              See The Leaderboard
             </Link>
           </div>
 
           {/* Live waste counter */}
-          <div className="animate-fade-in-up" style={{ animationDelay: "0.2s" }}>
+          <div>
             <p className="text-text-dim text-xs uppercase tracking-widest mb-3 font-medium">
               Total Wasted on This Platform
             </p>
@@ -107,7 +124,7 @@ export default function Landing() {
       <div className="border-y border-border bg-surface/40 overflow-hidden">
         <div className="ticker-mask flex overflow-hidden py-3">
           <div className="flex animate-ticker gap-8 whitespace-nowrap">
-            {[...recentEvents, ...recentEvents].map((event, i) => {
+            {[...tickerEvents, ...tickerEvents].map((event, i) => {
               const method = getMethodInfo(event.method);
               return (
                 <span key={i} className="flex items-center gap-2 text-sm text-text-muted">
@@ -137,7 +154,7 @@ export default function Landing() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 stagger-children">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
             {
               step: "01",
@@ -202,7 +219,7 @@ export default function Landing() {
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-children">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {recentEvents.slice(0, 8).map((event) => {
               const method = getMethodInfo(event.method);
               return (
@@ -217,7 +234,7 @@ export default function Landing() {
                     >
                       {method.icon}
                     </div>
-                    <span className="text-xs text-text-dim">{timeAgo(event.createdAt)}</span>
+                    <span className="text-xs text-text-dim">{timeAgo(new Date(event.createdAt))}</span>
                   </div>
                   <div className="font-[family-name:var(--font-display)] text-2xl font-extrabold fire-glow mb-1">
                     {formatCurrency(event.amount)}
@@ -235,18 +252,18 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ─── WALL OF WASTE PREVIEW ─── */}
+      {/* ─── BIGGEST BURNS PREVIEW ─── */}
       <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
         <div className="text-center mb-12">
           <h2 className="font-[family-name:var(--font-display)] text-4xl sm:text-5xl font-bold mb-4">
-            Wall of <span className="fire-glow-intense">Shame</span>
+            Biggest <span className="fire-glow-intense">Burns</span>
           </h2>
           <p className="text-text-muted max-w-md mx-auto">
             The biggest single wastes of all time. These people need an intervention.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 stagger-children">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
           {topWastes.map((waste) => {
             const method = getMethodInfo(waste.method);
             return (
@@ -290,10 +307,10 @@ export default function Landing() {
 
         <div className="text-center mt-10">
           <Link
-            to="/wall-of-waste"
+            to="/leaderboard"
             className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-border font-semibold text-text-muted hover:text-text hover:bg-surface transition-all"
           >
-            See Full Hall of Shame
+            View Full Leaderboard
             <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
@@ -335,8 +352,7 @@ export default function Landing() {
             <div className="flex items-center gap-6 text-sm text-text-dim">
               <Link to="/feed" className="hover:text-text transition-colors">Feed</Link>
               <Link to="/leaderboard" className="hover:text-text transition-colors">Leaderboard</Link>
-              <Link to="/stats" className="hover:text-text transition-colors">Stats</Link>
-              <Link to="/wall-of-waste" className="hover:text-text transition-colors">Wall of Shame</Link>
+              <Link to="/analytics" className="hover:text-text transition-colors">Analytics</Link>
             </div>
             <p className="text-xs text-text-dim">
               &copy; {new Date().getFullYear()} — No refunds. No ragrets.

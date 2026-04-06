@@ -6,6 +6,18 @@ import { razorpay, RAZORPAY_KEY_ID } from "~/lib/razorpay.server";
 import { checkRateLimit } from "~/lib/rate-limit.server";
 import type { Route } from "./+types/burn";
 
+export function meta() {
+  return [
+    { title: "Burn Your Money — WasteYourMoney" },
+    { name: "description", content: "Choose your amount, pick your destruction method, and burn real money into the void. No refunds." },
+    { property: "og:title", content: "Burn Your Money — WasteYourMoney" },
+    { property: "og:description", content: "Choose your amount and burn real money into the void." },
+    { property: "og:type", content: "website" },
+    { property: "og:site_name", content: "WasteYourMoney" },
+    { name: "twitter:card", content: "summary" },
+  ];
+}
+
 const PRESET_AMOUNTS = [10, 50, 100, 500, 1000, 5000];
 const MIN_AMOUNT = 1;
 const MAX_AMOUNT = 999999;

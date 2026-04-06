@@ -2,3 +2,8 @@
 build
 node_modules
 README.md
+.env
+data/waste.db
+data/waste.db-wal
+data/waste.db-shm
+.git
