@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router";
 import { Flame, PartyPopper, ArrowLeft, ArrowRight, Trophy, Share2, Copy, Check, ExternalLink, History } from "lucide-react";
 import { getEventById } from "~/lib/queries.server";
-import { formatINR, getMethodInfo } from "~/lib/utils";
+import { formatINR, getMoneyType } from "~/lib/utils";
 import type { Route } from "./+types/burn-success";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -19,7 +19,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function BurnSuccess({ loaderData }: Route.ComponentProps) {
   const { event } = loaderData;
-  const methodInfo = event ? getMethodInfo(event.method as any) : null;
+  const methodInfo = event ? getMoneyType(event.amount) : null;
   const [copied, setCopied] = useState(false);
 
   // Save this burn ID to localStorage history

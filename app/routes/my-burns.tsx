@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { Flame, ArrowRight, Receipt, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { formatINR, timeAgo, getMethodInfo } from "~/lib/utils";
+import { formatINR, timeAgo, getMoneyType } from "~/lib/utils";
 import type { WasteEventRow } from "~/lib/queries.server";
 import type { Route } from "./+types/my-burns";
 
@@ -46,12 +46,9 @@ export default function MyBurns({ loaderData }: Route.ComponentProps) {
       {/* Nav */}
       <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/20 transition-colors">
-              <Flame className="h-5 w-5 text-primary" />
-            </div>
+          <Link to="/" className="group">
             <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight">
-              Waste<span className="text-primary">Your</span>Money
+              <span className="text-primary">.</span>waste<span className="text-primary">your</span>money
             </span>
           </Link>
           <div className="flex items-center gap-1">
@@ -114,7 +111,7 @@ export default function MyBurns({ loaderData }: Route.ComponentProps) {
         ) : (
           <div className="space-y-3">
             {displayEvents.map((event) => {
-              const method = getMethodInfo(event.method as any);
+              const method = getMoneyType(event.amount);
               return (
                 <Link
                   key={event.id}

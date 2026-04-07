@@ -1,7 +1,7 @@
 import { db } from "./db.server";
 import { wasteEvents } from "./schema.server";
 import { desc, sql, eq, count, sum, lt, and, or } from "drizzle-orm";
-import type { WasteMethod } from "./utils";
+import { MONEY_TYPES, getMoneyType, getMoneyTypeKey, type MoneyType } from "./utils";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -18,7 +18,7 @@ export interface LeaderboardEntry {
   nickname: string;
   totalWasted: number;
   wasteCount: number;
-  topMethod: WasteMethod;
+  tier: MoneyType;
 }
 
 export interface PlatformStats {
@@ -63,25 +63,35 @@ export function getAllEvents(): WasteEventRow[] {
 
 // ── Paginated Events ───────────────────────────────────────
 
-export const PAGE_SIZE = 25;
+export const PAGE_SIZE = 24; // multiple of 4,3,2 — fills complete rows at all grid breakpoints
 
 export interface EventsPage {
   events: WasteEventRow[];
   nextCursor: number | null; // null = no more pages
 }
 
+function tierAmountFilter(tier?: MoneyType) {
+  if (!tier) return undefined;
+  const t = MONEY_TYPES[tier];
+  if (!t) return undefined;
+  return t.max === Infinity
+    ? sql`${wasteEvents.amount} >= ${t.min}`
+    : sql`${wasteEvents.amount} >= ${t.min} AND ${wasteEvents.amount} <= ${t.max}`;
+}
+
 export function getEventsPaginated({
   cursorId,
-  method,
+  tier,
   sort = "newest",
   limit = PAGE_SIZE,
 }: {
   cursorId?: number;
-  method?: string;
+  tier?: MoneyType;
   sort?: "newest" | "biggest";
   limit?: number;
 }): EventsPage {
   const fetchLimit = limit + 1; // fetch one extra to detect next page
+  const amountFilter = tierAmountFilter(tier);
 
   if (sort === "newest") {
     // Cursor on id (auto-increment = insertion order). Stable even with concurrent inserts.
@@ -89,7 +99,7 @@ export function getEventsPaginated({
       .select()
       .from(wasteEvents)
       .where(and(
-        method ? eq(wasteEvents.method, method) : undefined,
+        amountFilter,
         cursorId ? lt(wasteEvents.id, cursorId) : undefined,
       ))
       .orderBy(desc(wasteEvents.id))
@@ -126,7 +136,7 @@ export function getEventsPaginated({
     .select()
     .from(wasteEvents)
     .where(and(
-      method ? eq(wasteEvents.method, method) : undefined,
+      amountFilter,
       cursorCondition,
     ))
     .orderBy(desc(wasteEvents.amount), desc(wasteEvents.id))
@@ -192,25 +202,13 @@ export function getLeaderboard(timeframe: "all-time" | "monthly"): LeaderboardEn
         .orderBy(sql`total_wasted DESC`)
         .all();
 
-  // For each entry, find their top method
   return baseQuery.map((row) => {
-    const topMethodRow = db
-      .select({
-        method: wasteEvents.method,
-        total: sum(wasteEvents.amount),
-      })
-      .from(wasteEvents)
-      .where(eq(wasteEvents.nickname, row.nickname!))
-      .groupBy(wasteEvents.method)
-      .orderBy(sql`${sum(wasteEvents.amount)} DESC`)
-      .limit(1)
-      .get();
-
+    const totalWasted = Number(row.totalWasted ?? 0);
     return {
       nickname: row.nickname!,
-      totalWasted: Number(row.totalWasted ?? 0),
+      totalWasted,
       wasteCount: row.wasteCount,
-      topMethod: (topMethodRow?.method ?? "burn") as WasteMethod,
+      tier: getMoneyTypeKey(totalWasted),
     };
   });
 }
@@ -305,40 +303,23 @@ export function getWasteByDayOfWeek() {
   }));
 }
 
-export function getWasteByMethod() {
-  const METHOD_COLORS: Record<string, string> = {
-    burn: "#FF4500",
-    shred: "#FF6B35",
-    flush: "#3B82F6",
-    yeet: "#A855F7",
-    blackhole: "#6366F1",
-    feed: "#10B981",
-  };
-
-  const METHOD_LABELS: Record<string, string> = {
-    burn: "Burn",
-    shred: "Shred",
-    flush: "Flush",
-    yeet: "Yeet",
-    blackhole: "Black Hole",
-    feed: "Feed Void",
-  };
-
-  const rows = db
-    .select({
-      method: wasteEvents.method,
-      value: sum(wasteEvents.amount).as("value"),
-    })
-    .from(wasteEvents)
-    .groupBy(wasteEvents.method)
-    .orderBy(sql`value DESC`)
-    .all();
-
-  return rows.map((r) => ({
-    method: METHOD_LABELS[r.method] ?? r.method,
-    value: Number(r.value ?? 0),
-    color: METHOD_COLORS[r.method] ?? "#9C978E",
-  }));
+export function getWasteByMoneyType() {
+  return Object.entries(MONEY_TYPES).map(([key, tier]) => {
+    const result = db
+      .select({ value: sum(wasteEvents.amount).as("value") })
+      .from(wasteEvents)
+      .where(
+        tier.max === Infinity
+          ? sql`${wasteEvents.amount} >= ${tier.min}`
+          : sql`${wasteEvents.amount} >= ${tier.min} AND ${wasteEvents.amount} <= ${tier.max}`
+      )
+      .get();
+    return {
+      type: tier.label,
+      value: Number(result?.value ?? 0),
+      color: tier.color,
+    };
+  }).filter((r) => r.value > 0);
 }
 
 export function getWasteByAmountTier() {
@@ -439,9 +420,11 @@ export function getTopSingleBurns(limit = 10) {
 
   return rows.map((row, idx) => ({
     rank: idx + 1,
+    id: row.id,
     nickname: row.nickname,
+    message: row.message,
     amount: row.amount,
-    method: row.method as WasteMethod,
+    method: row.method,
     when: row.createdAt.toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",

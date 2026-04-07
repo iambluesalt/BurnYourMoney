@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { getEventById } from "~/lib/queries.server";
-import { formatINR, getMethodInfo } from "~/lib/utils";
+import { formatINR, getMoneyType } from "~/lib/utils";
 import type { Route } from "./+types/burn-receipt";
 
 export function meta({ data }: Route.MetaArgs) {
@@ -13,7 +13,7 @@ export function meta({ data }: Route.MetaArgs) {
   }
 
   const { event } = data;
-  const method = getMethodInfo(event.method as any);
+  const method = getMoneyType(event.amount);
   const title = `${method.icon} ${formatINR(event.amount)} ${method.verb} — WasteYourMoney`;
   const description = `${event.nickname || "Anonymous"} just ${method.verb} ${formatINR(event.amount)} into the void.${event.message ? ` "${event.message}"` : ""}`;
 
@@ -64,7 +64,7 @@ export default function BurnReceipt({ loaderData }: Route.ComponentProps) {
     );
   }
 
-  const method = getMethodInfo(event.method as any);
+  const method = getMoneyType(event.amount);
   const date = new Date(event.createdAt);
   const formattedDate = date.toLocaleDateString("en-US", {
     month: "long",
@@ -144,10 +144,10 @@ export default function BurnReceipt({ loaderData }: Route.ComponentProps) {
               </div>
               <div>
                 <div className="text-text-dim text-xs uppercase tracking-widest mb-1">
-                  Method
+                  Type
                 </div>
-                <div className="font-semibold capitalize">
-                  {method.icon} {method.verb}
+                <div className="font-semibold">
+                  {method.icon} {method.label}
                 </div>
               </div>
               <div className="text-right">

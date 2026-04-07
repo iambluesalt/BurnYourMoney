@@ -1,17 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import { Flame, Clock, ArrowUpDown, LayoutGrid, Table2, ChevronDown, Loader2 } from "lucide-react";
 import { useFetcher, Link } from "react-router";
+import { BurnDetailModal, type BurnDetail } from "~/components/burn-detail-modal";
 import { getEventsPaginated, getPlatformStats } from "~/lib/queries.server";
 import type { WasteEventRow } from "~/lib/queries.server";
-import { formatCurrency, formatCompactCurrency, timeAgo, getMethodInfo, WASTE_METHODS, type WasteMethod } from "~/lib/utils";
-import { cn } from "~/lib/utils";
+import { formatCurrency, formatCompactCurrency, timeAgo, getMoneyType, MONEY_TYPES, type MoneyType, cn } from "~/lib/utils";
 import { useLiveData } from "~/lib/use-live-data";
 import type { Route } from "./+types/feed";
 
 export function meta() {
   return [
     { title: "Live Waste Feed — WasteYourMoney" },
-    { name: "description", content: "Watch money disappear in real-time. Every burn, shred, flush, and yeet — live as it happens." },
+    { name: "description", content: "Watch money disappear in real-time. From loose change to royal fortunes — live as it happens." },
     { property: "og:title", content: "Live Waste Feed — WasteYourMoney" },
     { property: "og:description", content: "Watch money disappear in real-time." },
     { property: "og:type", content: "website" },
@@ -28,10 +28,10 @@ export function loader({ request }: Route.LoaderArgs) {
   const cursorId = url.searchParams.get("cursor")
     ? Number(url.searchParams.get("cursor"))
     : undefined;
-  const method = url.searchParams.get("method") || undefined;
+  const tier = (url.searchParams.get("tier") as MoneyType) || undefined;
   const sort = (url.searchParams.get("sort") as SortOption) || "newest";
 
-  const page = getEventsPaginated({ cursorId, method, sort });
+  const page = getEventsPaginated({ cursorId, tier, sort });
 
   return {
     events: page.events,
@@ -44,9 +44,10 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
   const { events: loaderEvents, nextCursor: loaderNextCursor, stats: initialStats } = loaderData;
   const { stats, newEvents, clearNewEvents } = useLiveData(initialStats);
 
-  const [methodFilter, setMethodFilter] = useState<WasteMethod | "all">("all");
+  const [tierFilter, setTierFilter] = useState<MoneyType | "all">("all");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [selectedBurn, setSelectedBurn] = useState<BurnDetail | null>(null);
 
   // Single source of truth for displayed events
   const [events, setEvents] = useState<WasteEventRow[]>(loaderEvents);
@@ -64,7 +65,11 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
     if (newEvents.length === 0) return;
     const fresh = newEvents
       .filter((e) => !seenIds.current.has(e.id))
-      .filter((e) => methodFilter === "all" || e.method === methodFilter);
+      .filter((e) => {
+        if (tierFilter === "all") return true;
+        const tier = MONEY_TYPES[tierFilter];
+        return e.amount >= tier.min && e.amount <= tier.max;
+      });
     if (fresh.length === 0) {
       clearNewEvents();
       return;
@@ -72,7 +77,7 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
     fresh.forEach((e) => seenIds.current.add(e.id));
     setEvents((prev) => [...fresh, ...prev]);
     clearNewEvents();
-  }, [newEvents, clearNewEvents, methodFilter]);
+  }, [newEvents, clearNewEvents, tierFilter]);
 
   // Filter / sort change → replace first page from server
   useEffect(() => {
@@ -82,10 +87,10 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
     }
     fetchAction.current = "replace";
     const params = new URLSearchParams();
-    if (methodFilter !== "all") params.set("method", methodFilter);
+    if (tierFilter !== "all") params.set("tier", tierFilter);
     if (sortBy !== "newest") params.set("sort", sortBy);
     fetcher.load(`/feed?${params.toString()}`);
-  }, [methodFilter, sortBy]);
+  }, [tierFilter, sortBy]);
 
   // Handle fetcher data for both replace (filter change) and append (load more)
   useEffect(() => {
@@ -106,7 +111,7 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
     if (!nextCursor || fetcher.state !== "idle") return;
     fetchAction.current = "append";
     const params = new URLSearchParams();
-    if (methodFilter !== "all") params.set("method", methodFilter);
+    if (tierFilter !== "all") params.set("tier", tierFilter);
     if (sortBy !== "newest") params.set("sort", sortBy);
     params.set("cursor", String(nextCursor));
     fetcher.load(`/feed?${params.toString()}`);
@@ -121,12 +126,9 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
       {/* ─── NAV ─── */}
       <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/20 transition-colors">
-              <Flame className="h-5 w-5 text-primary" />
-            </div>
+          <Link to="/" className="group">
             <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight">
-              Waste<span className="text-primary">Your</span>Money
+              <span className="text-primary">.</span>waste<span className="text-primary">your</span>money
             </span>
           </Link>
           <div className="flex items-center gap-1">
@@ -164,13 +166,6 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
                 total incinerated.
               </p>
             </div>
-            <div className="flex items-center gap-2 text-xs text-text-dim">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-              </span>
-              Live
-            </div>
           </div>
         </div>
       </div>
@@ -181,29 +176,29 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
           {/* Method filter pills */}
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
             <button
-              onClick={() => setMethodFilter("all")}
+              onClick={() => setTierFilter("all")}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border",
-                methodFilter === "all"
+                tierFilter === "all"
                   ? "bg-primary text-background border-primary"
                   : "bg-surface border-border text-text-muted hover:text-text"
               )}
             >
               All
             </button>
-            {Object.entries(WASTE_METHODS).map(([key, method]) => (
+            {Object.entries(MONEY_TYPES).map(([key, tier]) => (
               <button
                 key={key}
-                onClick={() => setMethodFilter(key as WasteMethod)}
+                onClick={() => setTierFilter(key as MoneyType)}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border",
-                  methodFilter === key
+                  tierFilter === key
                     ? "border-primary/40 bg-primary/10 text-primary"
                     : "bg-surface border-border text-text-muted hover:text-text"
                 )}
               >
-                <span>{method.icon}</span>
-                <span>{method.label}</span>
+                <span>{tier.icon}</span>
+                <span>{tier.label}</span>
               </button>
             ))}
           </div>
@@ -251,10 +246,57 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
 
-        {/* ─── REPLACING SPINNER (filter / sort change) ─── */}
-        {isReplacing && (
-          <div className="flex items-center justify-center py-24">
-            <Loader2 className="h-6 w-6 text-primary animate-spin" />
+        {/* ─── SKELETON: GRID ─── */}
+        {isReplacing && viewMode === "grid" && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="rounded-xl border border-border bg-surface p-5 animate-pulse">
+                <div className="h-3 w-16 rounded-md bg-surface-elevated mb-3" />
+                <div className="h-9 w-3/4 rounded-md bg-surface-elevated mb-4" />
+                <div className="h-3 w-1/2 rounded-md bg-surface-elevated" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ─── SKELETON: TABLE ─── */}
+        {isReplacing && viewMode === "table" && (
+          <div className="rounded-xl border border-border bg-surface overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-surface/80">
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider">Type</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider">Amount</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider hidden sm:table-cell">By</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider hidden md:table-cell">Message</th>
+                  <th className="text-right px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider">When</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <tr key={i} className="animate-pulse">
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-8 w-8 rounded-lg bg-surface-elevated flex-shrink-0" />
+                        <div className="h-3.5 w-16 rounded-md bg-surface-elevated hidden sm:block" />
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <div className="h-4 w-20 rounded-md bg-surface-elevated ml-auto" />
+                    </td>
+                    <td className="px-5 py-3.5 hidden sm:table-cell">
+                      <div className="h-3.5 w-32 rounded-md bg-surface-elevated" />
+                    </td>
+                    <td className="px-5 py-3.5 hidden md:table-cell text-right">
+                      <div className="h-3.5 w-40 rounded-md bg-surface-elevated ml-auto" />
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <div className="h-3.5 w-14 rounded-md bg-surface-elevated ml-auto" />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
@@ -262,42 +304,40 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
         {!isReplacing && viewMode === "grid" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {events.map((event) => {
-              const method = getMethodInfo(event.method);
+              const tier = getMoneyType(event.amount);
               return (
-                <div
+                <button
                   key={event.id}
-                  className="group rounded-xl border border-border bg-surface p-5 card-ember"
+                  onClick={() => setSelectedBurn(event)}
+                  className="group relative overflow-hidden rounded-xl border border-border bg-surface p-5 card-ember text-left cursor-pointer hover:border-primary/30 transition-colors"
                 >
-                  <div className="flex items-start justify-between mb-4">
-                    <div
-                      className="flex h-11 w-11 items-center justify-center rounded-lg text-xl"
-                      style={{ backgroundColor: `${method.color}15` }}
-                    >
-                      {method.icon}
-                    </div>
+                  <div className="flex justify-start mb-3">
                     <span className="flex items-center gap-1 text-xs text-text-dim">
                       <Clock className="h-3 w-3" />
                       {timeAgo(new Date(event.createdAt))}
                     </span>
                   </div>
-                  <div className="font-[family-name:var(--font-display)] text-3xl font-extrabold fire-glow mb-2">
+                  <div className="font-[family-name:var(--font-display)] text-4xl font-extrabold fire-glow mb-2">
                     {formatCurrency(event.amount)}
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-text-muted">
-                      {method.verb} by{" "}
+                      {tier.verb} by{" "}
                       <span className="font-semibold text-text">
                         {event.nickname ?? "Anonymous"}
                       </span>
                     </span>
-                    <span
+                    {/* <span
                       className="text-xs font-medium px-2 py-0.5 rounded-full"
-                      style={{ color: method.color, backgroundColor: `${method.color}12` }}
+                      style={{ color: tier.color, backgroundColor: `${tier.color}12` }}
                     >
-                      {method.label}
-                    </span>
+                      {tier.label}
+                    </span> */}
                   </div>
-                </div>
+                  <span className="absolute -bottom-5 -right-4 text-[90px] opacity-[0.12] pointer-events-none select-none transition-transform duration-300 group-hover:scale-110 group-hover:opacity-[0.2] " aria-hidden="true">
+                    {tier.icon}
+                  </span>
+                </button>
               );
             })}
           </div>
@@ -309,7 +349,7 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface/80">
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider">Method</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider">Type</th>
                   <th className="text-right px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider">Amount</th>
                   <th className="text-left px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider hidden sm:table-cell">By</th>
                   <th className="text-right px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider hidden md:table-cell">Message</th>
@@ -318,22 +358,22 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
               </thead>
               <tbody className="divide-y divide-border/50">
                 {events.map((event) => {
-                  const method = getMethodInfo(event.method);
+                  const tier = getMoneyType(event.amount);
                   return (
-                    <tr key={event.id} className="group hover:bg-primary/5 transition-colors">
+                    <tr key={event.id} onClick={() => setSelectedBurn(event)} className="group hover:bg-primary/5 transition-colors cursor-pointer">
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2.5">
                           <span
                             className="flex h-8 w-8 items-center justify-center rounded-lg text-base flex-shrink-0"
-                            style={{ backgroundColor: `${method.color}15` }}
+                            style={{ backgroundColor: `${tier.color}15` }}
                           >
-                            {method.icon}
+                            {tier.icon}
                           </span>
                           <span
                             className="text-xs font-medium px-2 py-0.5 rounded-full hidden xs:inline-flex"
-                            style={{ color: method.color, backgroundColor: `${method.color}12` }}
+                            style={{ color: tier.color, backgroundColor: `${tier.color}12` }}
                           >
-                            {method.label}
+                            {tier.label}
                           </span>
                         </div>
                       </td>
@@ -344,7 +384,7 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
                       </td>
                       <td className="px-5 py-3.5 hidden sm:table-cell">
                         <span className="text-xs text-text-muted">
-                          {method.verb} by{" "}
+                          {tier.verb} by{" "}
                           <span className="font-semibold text-text">
                             {event.nickname ?? "Anonymous"}
                           </span>
@@ -421,6 +461,8 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
           </div>
         )}
       </div>
+
+      <BurnDetailModal burn={selectedBurn} onClose={() => setSelectedBurn(null)} />
     </div>
   );
 }

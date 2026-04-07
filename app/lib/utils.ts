@@ -50,17 +50,28 @@ export function timeAgo(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export const WASTE_METHODS = {
-  burn: { label: "Burned", icon: "🔥", color: "#FF4500", verb: "burned" },
-  shred: { label: "Shredded", icon: "🗑️", color: "#FF6B35", verb: "shredded" },
-  flush: { label: "Flushed", icon: "🚽", color: "#3B82F6", verb: "flushed" },
-  yeet: { label: "Yeeted", icon: "🚀", color: "#A855F7", verb: "yeeted" },
-  blackhole: { label: "Black Holed", icon: "🕳️", color: "#6366F1", verb: "sent to the void" },
-  feed: { label: "Fed to Void", icon: "👹", color: "#10B981", verb: "fed to the void" },
+export const MONEY_TYPES = {
+  coin:    { label: "Loose Change", icon: "🪙", color: "#CD7F32", verb: "tossed away",   min: 1,      max: 99 },
+  note:    { label: "Paper Trail",  icon: "💵", color: "#22C55E", verb: "crumpled up",    min: 100,    max: 499 },
+  splash:  { label: "Cash Splash",  icon: "💸", color: "#3B82F6", verb: "splashed away",  min: 500,    max: 999 },
+  bag:     { label: "Money Bag",    icon: "💰", color: "#F59E0B", verb: "dumped",          min: 1000,   max: 4999 },
+  fire:    { label: "Bonfire",      icon: "🔥", color: "#FF4500", verb: "incinerated",    min: 5000,   max: 24999 },
+  diamond: { label: "Diamond Burn", icon: "💎", color: "#A855F7", verb: "obliterated",    min: 25000,  max: 99999 },
+  crown:   { label: "Royal Waste",  icon: "👑", color: "#FFB800", verb: "detonated",      min: 100000, max: Infinity },
 } as const;
 
-export type WasteMethod = keyof typeof WASTE_METHODS;
+export type MoneyType = keyof typeof MONEY_TYPES;
 
-export function getMethodInfo(method: WasteMethod | string) {
-  return WASTE_METHODS[method as WasteMethod] ?? WASTE_METHODS.burn;
+export function getMoneyType(amount: number) {
+  for (const [, info] of Object.entries(MONEY_TYPES)) {
+    if (amount >= info.min && amount <= info.max) return info;
+  }
+  return MONEY_TYPES.coin;
+}
+
+export function getMoneyTypeKey(amount: number): MoneyType {
+  for (const [key, info] of Object.entries(MONEY_TYPES)) {
+    if (amount >= info.min && amount <= info.max) return key as MoneyType;
+  }
+  return "coin";
 }

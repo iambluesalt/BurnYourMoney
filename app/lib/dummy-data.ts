@@ -2,12 +2,12 @@
 // DUMMY DATA — Mock data for WasteYourMoney frontend
 // ============================================================
 
-import type { WasteMethod } from "./utils";
+import { getMoneyTypeKey, type MoneyType } from "./utils";
 
 export interface WasteEvent {
   id: string;
   amount: number;
-  method: WasteMethod;
+  method: string;
   nickname: string | null;
   createdAt: Date;
 }
@@ -17,7 +17,7 @@ export interface LeaderboardEntry {
   nickname: string;
   totalWasted: number;
   wasteCount: number;
-  topMethod: WasteMethod;
+  tier: MoneyType;
 }
 
 // -----------------------------------------------------------
@@ -280,7 +280,7 @@ function aggregateLeaderboard(events: WasteEvent[]): LeaderboardEntry[] {
       nickname,
       totalWasted: data.total,
       wasteCount: data.count,
-      topMethod: Object.entries(data.methods).sort((a, b) => b[1] - a[1])[0][0] as WasteMethod,
+      tier: getMoneyTypeKey(data.total),
     }))
     .sort((a, b) => b.totalWasted - a.totalWasted);
 }
@@ -345,11 +345,11 @@ export const hourlyDistributionData = [
 // Wall of Waste (biggest single burns)
 // -----------------------------------------------------------
 export const wallOfWaste = [
-  { rank: 1, nickname: "YeetKing", amount: 5000.0, method: "yeet" as WasteMethod, when: "Mar 15, 2025" },
-  { rank: 2, nickname: "FlameLord", amount: 2500.0, method: "burn" as WasteMethod, when: "Feb 28, 2025" },
-  { rank: 3, nickname: null, amount: 1200.0, method: "blackhole" as WasteMethod, when: "Mar 1, 2025" },
-  { rank: 4, nickname: "VoidMaster", amount: 1000.0, method: "blackhole" as WasteMethod, when: "Jan 20, 2025" },
-  { rank: 5, nickname: "FlameLord", amount: 750.0, method: "burn" as WasteMethod, when: "Apr 2, 2025" },
+  { rank: 1, nickname: "YeetKing", amount: 5000.0, method: "fire", when: "Mar 15, 2025" },
+  { rank: 2, nickname: "FlameLord", amount: 2500.0, method: "bag", when: "Feb 28, 2025" },
+  { rank: 3, nickname: null, amount: 1200.0, method: "bag", when: "Mar 1, 2025" },
+  { rank: 4, nickname: "VoidMaster", amount: 1000.0, method: "bag", when: "Jan 20, 2025" },
+  { rank: 5, nickname: "FlameLord", amount: 750.0, method: "splash", when: "Apr 2, 2025" },
 ];
 
 // -----------------------------------------------------------

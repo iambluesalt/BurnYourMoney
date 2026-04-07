@@ -1,6 +1,7 @@
 import { razorpay, verifyPaymentSignature } from "~/lib/razorpay.server";
 import { db } from "~/lib/db.server";
 import { wasteEvents } from "~/lib/schema.server";
+import { getMoneyTypeKey } from "~/lib/utils";
 import type { Route } from "./+types/burn-verify";
 
 export async function action({ request }: Route.ActionArgs) {
@@ -49,7 +50,7 @@ export async function action({ request }: Route.ActionArgs) {
     const order = await razorpay.orders.fetch(razorpay_order_id);
 
     const amount = Number(order.amount) / 100; // paise → INR
-    const method = (order.notes as Record<string, string>)?.method || "burn";
+    const method = getMoneyTypeKey(amount);
     const nickname =
       (order.notes as Record<string, string>)?.nickname || null;
     const message =

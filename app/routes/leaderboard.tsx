@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Trophy, Flame } from "lucide-react";
 import { Link } from "react-router";
+import { BurnDetailModal, type BurnDetail } from "~/components/burn-detail-modal";
 import { getLeaderboard, getTopSingleBurns } from "~/lib/queries.server";
-import { formatCurrency, formatCompactCurrency, getMethodInfo, cn } from "~/lib/utils";
+import { formatCurrency, formatCompactCurrency, getMoneyType, cn } from "~/lib/utils";
 import type { Route } from "./+types/leaderboard";
 
 export function meta() {
@@ -29,6 +30,7 @@ export function loader() {
 
 export default function Leaderboard({ loaderData }: Route.ComponentProps) {
   const [timeFrame, setTimeFrame] = useState<TimeFrame>("all-time");
+  const [selectedBurn, setSelectedBurn] = useState<BurnDetail | null>(null);
 
   const entries = timeFrame === "all-time" ? loaderData.allTime : loaderData.monthly;
   const totalWasted = timeFrame !== "biggest"
@@ -40,12 +42,9 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
       {/* ─── NAV ─── */}
       <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/20 transition-colors">
-              <Flame className="h-5 w-5 text-primary" />
-            </div>
+          <Link to="/" className="group">
             <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight">
-              Waste<span className="text-primary">Your</span>Money
+              <span className="text-primary">.</span>waste<span className="text-primary">your</span>money
             </span>
           </Link>
           <div className="flex items-center gap-1">
@@ -113,9 +112,12 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
             {/* ─── BIGGEST BURNS ─── */}
             {loaderData.biggestBurns[0] && (() => {
               const biggest = loaderData.biggestBurns[0];
-              const method = getMethodInfo(biggest.method);
+              const tier = getMoneyType(biggest.amount);
               return (
-                <div className="relative rounded-3xl border-2 border-danger/30 bg-gradient-to-b from-danger/8 to-transparent p-8 sm:p-12 mb-8 overflow-hidden">
+                <button
+                  onClick={() => setSelectedBurn(biggest)}
+                  className="relative w-full rounded-3xl border-2 border-danger/30 bg-gradient-to-b from-danger/8 to-transparent p-8 sm:p-12 mb-8 overflow-hidden hover:border-primary/40 transition-colors"
+                >
                   <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[200px] bg-danger/5 rounded-full blur-[80px] pointer-events-none" />
                   <div className="relative text-center">
                     <div className="text-6xl mb-4 drop-shadow-lg">🏆</div>
@@ -128,26 +130,27 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
                     <div className="flex items-center justify-center gap-3 mt-6">
                       <span
                         className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold"
-                        style={{ color: method.color, backgroundColor: `${method.color}15` }}
+                        style={{ color: tier.color, backgroundColor: `${tier.color}15` }}
                       >
-                        {method.icon} {method.label}
+                        {tier.icon} {tier.label}
                       </span>
                       <span className="text-text-dim text-sm">by</span>
                       <span className="font-bold text-lg">{biggest.nickname ?? "Anonymous"}</span>
                     </div>
                     <div className="text-text-dim text-sm mt-2">{biggest.when}</div>
                   </div>
-                </div>
+                </button>
               );
             })()}
 
             <div className="space-y-4">
               {loaderData.biggestBurns.slice(1).map((waste) => {
-                const method = getMethodInfo(waste.method);
+                const tier = getMoneyType(waste.amount);
                 return (
-                  <div
+                  <button
                     key={waste.rank}
-                    className="relative rounded-2xl border border-border bg-surface p-6 flex flex-col sm:flex-row sm:items-center gap-5 card-ember"
+                    onClick={() => setSelectedBurn(waste)}
+                    className="group relative overflow-hidden w-full rounded-2xl border border-border bg-surface p-6 flex flex-col sm:flex-row sm:items-center gap-5 card-ember text-left hover:border-primary/30 transition-colors"
                   >
                     <div className="flex items-center gap-4">
                       <div
@@ -159,22 +162,19 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
                         #{waste.rank}
                       </div>
                     </div>
-                    <div
-                      className="flex h-12 w-12 items-center justify-center rounded-xl text-2xl flex-shrink-0"
-                      style={{ backgroundColor: `${method.color}15` }}
-                    >
-                      {method.icon}
-                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="font-semibold text-base">{waste.nickname ?? "Anonymous"}</div>
-                      <div className="text-xs text-text-dim mt-0.5">{waste.when} · {method.verb}</div>
+                      <div className="text-xs text-text-dim mt-0.5">{waste.when} · {tier.label}</div>
                     </div>
                     <div className="text-right flex-shrink-0">
                       <div className="font-[family-name:var(--font-display)] text-2xl font-extrabold fire-glow">
                         {formatCurrency(waste.amount)}
                       </div>
                     </div>
-                  </div>
+                    <span className="absolute -bottom-5 -right-4 text-[90px] opacity-[0.10] pointer-events-none select-none transition-transform duration-300 group-hover:scale-110 group-hover:opacity-[0.18] -rotate-12" aria-hidden="true">
+                      {tier.icon}
+                    </span>
+                  </button>
                 );
               })}
             </div>
@@ -190,9 +190,9 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
             {/* ─── TOP 3 HIGHLIGHT ─── */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
               {entries.slice(0, 3).map((entry, idx) => {
-                const method = getMethodInfo(entry.topMethod);
+                const tier = getMoneyType(entry.totalWasted);
                 const medals = ["🥇", "🥈", "🥉"];
-                const tierColors = ["#FFB800", "#9CA3AF", "#CD7F32"];
+                const podiumColors = ["#FFB800", "#9CA3AF", "#CD7F32"];
                 return (
                   <div
                     key={entry.nickname}
@@ -213,8 +213,8 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
                       <div
                         className="flex h-14 w-14 items-center justify-center rounded-xl text-2xl flex-shrink-0"
                         style={{
-                          backgroundColor: `${tierColors[idx]}15`,
-                          border: `1px solid ${tierColors[idx]}30`,
+                          backgroundColor: `${podiumColors[idx]}15`,
+                          border: `1px solid ${podiumColors[idx]}30`,
                         }}
                       >
                         {entry.nickname[0].toUpperCase()}
@@ -227,7 +227,7 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
                           {entry.nickname}
                         </div>
                         <div className="flex items-center gap-1.5 mt-1">
-                          <span className="text-sm">{method.icon}</span>
+                          <span className="text-sm">{tier.icon}</span>
                           <span className="text-xs text-text-muted">
                             {entry.wasteCount} waste events
                           </span>
@@ -240,6 +240,9 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
                       </div>
                       <div className="text-xs text-text-dim mt-0.5">total burned</div>
                     </div>
+                    <span className="absolute -bottom-5 -right-4 text-[90px] opacity-[0.12] pointer-events-none select-none -rotate-12" aria-hidden="true">
+                      {tier.icon}
+                    </span>
                   </div>
                 );
               })}
@@ -254,12 +257,12 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
                     <th className="text-left text-xs font-bold text-text-dim uppercase tracking-widest px-6 py-4">Waster</th>
                     <th className="text-right text-xs font-bold text-text-dim uppercase tracking-widest px-6 py-4">Total Burned</th>
                     <th className="text-right text-xs font-bold text-text-dim uppercase tracking-widest px-6 py-4">Events</th>
-                    <th className="text-right text-xs font-bold text-text-dim uppercase tracking-widest px-6 py-4">Top Method</th>
+                    <th className="text-right text-xs font-bold text-text-dim uppercase tracking-widest px-6 py-4">Tier</th>
                   </tr>
                 </thead>
                 <tbody>
                   {entries.map((entry, idx) => {
-                    const method = getMethodInfo(entry.topMethod);
+                    const tier = getMoneyType(entry.totalWasted);
                     return (
                       <tr
                         key={entry.nickname}
@@ -285,7 +288,7 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
                           <div className="flex items-center gap-3">
                             <div
                               className="flex h-9 w-9 items-center justify-center rounded-lg text-sm font-bold flex-shrink-0"
-                              style={{ backgroundColor: `${method.color}12` }}
+                              style={{ backgroundColor: `${tier.color}12` }}
                             >
                               {entry.nickname[0].toUpperCase()}
                             </div>
@@ -305,9 +308,9 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
                         <td className="px-6 py-4 text-right">
                           <span
                             className="inline-flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full"
-                            style={{ color: method.color, backgroundColor: `${method.color}12` }}
+                            style={{ color: tier.color, backgroundColor: `${tier.color}12` }}
                           >
-                            {method.icon} {method.label}
+                            {tier.icon} {tier.label}
                           </span>
                         </td>
                       </tr>
@@ -327,6 +330,8 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
           </p>
         </div>
       </div>
+
+      <BurnDetailModal burn={selectedBurn} onClose={() => setSelectedBurn(null)} />
     </div>
   );
 }

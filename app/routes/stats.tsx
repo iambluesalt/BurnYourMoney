@@ -19,7 +19,7 @@ import {
 import {
   getPlatformStats,
   getWasteOverTimePeriod,
-  getWasteByMethod,
+  getWasteByMoneyType,
   getWasteByAmountTier,
   getWasteByDayOfWeek,
 } from "~/lib/queries.server";
@@ -57,7 +57,7 @@ export function loader() {
     wasteOverTime30d: getWasteOverTimePeriod("30d"),
     wasteOverTime3m: getWasteOverTimePeriod("3m"),
     wasteOverTimeAll: getWasteOverTimePeriod("all"),
-    wasteByMethodData: getWasteByMethod(),
+    wasteByMethodData: getWasteByMoneyType(),
     wasteByAmountTierData: getWasteByAmountTier(),
     wasteByDayOfWeekData: getWasteByDayOfWeek(),
   };
@@ -82,12 +82,9 @@ export default function Stats({ loaderData }: Route.ComponentProps) {
       {/* ─── NAV ─── */}
       <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 border border-primary/20 group-hover:bg-primary/20 transition-colors">
-              <Flame className="h-5 w-5 text-primary" />
-            </div>
+          <Link to="/" className="group">
             <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight">
-              Waste<span className="text-primary">Your</span>Money
+              <span className="text-primary">.</span>waste<span className="text-primary">your</span>money
             </span>
           </Link>
           <div className="flex items-center gap-1">
@@ -236,12 +233,12 @@ export default function Stats({ loaderData }: Route.ComponentProps) {
 
         {/* ─── TWO COLUMN GRIDS ─── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* By Method */}
+          {/* By Money Type */}
           <div className="rounded-2xl border border-border bg-surface p-6">
             <h3 className="font-[family-name:var(--font-display)] text-xl font-bold mb-1">
-              By Method
+              By Money Type
             </h3>
-            <p className="text-xs text-text-dim mb-6">What the world burns most</p>
+            <p className="text-xs text-text-dim mb-6">Where the world's waste lands</p>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -253,10 +250,10 @@ export default function Stats({ loaderData }: Route.ComponentProps) {
                     outerRadius={90}
                     paddingAngle={3}
                     dataKey="value"
-                    nameKey="method"
+                    nameKey="type"
                     stroke="none"
                   >
-                    {wasteByMethodData.map((entry, index) => (
+                    {wasteByMethodData.map((entry: { color: string }, index: number) => (
                       <Cell key={index} fill={entry.color} />
                     ))}
                   </Pie>

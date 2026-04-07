@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useFetcher, useNavigate } from "react-router";
 import { Flame, ArrowLeft, Sparkles, Skull, AlertTriangle } from "lucide-react";
-import { WASTE_METHODS, type WasteMethod, cn, formatINR } from "~/lib/utils";
+import { MONEY_TYPES, getMoneyType, getMoneyTypeKey, cn, formatINR } from "~/lib/utils";
 import { razorpay, RAZORPAY_KEY_ID } from "~/lib/razorpay.server";
 import { checkRateLimit } from "~/lib/rate-limit.server";
 import type { Route } from "./+types/burn";
@@ -9,7 +9,7 @@ import type { Route } from "./+types/burn";
 export function meta() {
   return [
     { title: "Burn Your Money — WasteYourMoney" },
-    { name: "description", content: "Choose your amount, pick your destruction method, and burn real money into the void. No refunds." },
+    { name: "description", content: "Choose your amount and burn real money into the void. No refunds." },
     { property: "og:title", content: "Burn Your Money — WasteYourMoney" },
     { property: "og:description", content: "Choose your amount and burn real money into the void." },
     { property: "og:type", content: "website" },
@@ -29,16 +29,12 @@ export async function loader() {
 export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const amount = Number(formData.get("amount"));
-  const method = formData.get("method") as string;
   const nickname = (formData.get("nickname") as string)?.trim() || null;
   const message = (formData.get("message") as string)?.trim() || null;
 
   // Validate
   if (!amount || amount < MIN_AMOUNT || amount > MAX_AMOUNT) {
     return { error: "Amount must be between ₹1 and ₹9,99,999" };
-  }
-  if (!method || !(method in WASTE_METHODS)) {
-    return { error: "Pick a destruction method" };
   }
 
   // Rate limit
@@ -60,7 +56,7 @@ export async function action({ request }: Route.ActionArgs) {
       currency: "INR",
       receipt: `waste_${Date.now()}`,
       notes: {
-        method,
+        moneyType: getMoneyTypeKey(amount),
         nickname: nickname || "",
         message: message || "",
       },
@@ -91,7 +87,6 @@ export default function Burn({ loaderData }: Route.ComponentProps) {
   const [amount, setAmount] = useState<number>(100);
   const [customAmount, setCustomAmount] = useState("");
   const [isCustom, setIsCustom] = useState(false);
-  const [method, setMethod] = useState<WasteMethod>("burn");
   const [nickname, setNickname] = useState("");
   const [message, setMessage] = useState("");
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -127,7 +122,7 @@ export default function Burn({ loaderData }: Route.ComponentProps) {
       currency: data.currency,
       order_id: data.orderId,
       name: "WasteYourMoney",
-      description: `${WASTE_METHODS[method].icon} ${WASTE_METHODS[method].verb} ${formatINR(amount)}`,
+      description: `${getMoneyType(amount).icon} Burning ${formatINR(amount)}`,
       theme: {
         color: "#FF6B35",
         backdrop_color: "rgba(10,10,8,0.85)",
@@ -182,17 +177,16 @@ export default function Burn({ loaderData }: Route.ComponentProps) {
   const effectiveAmount = isCustom ? Number(customAmount) || 0 : amount;
   const isSubmitting = fetcher.state !== "idle";
   const error = fetcher.data && "error" in fetcher.data ? fetcher.data.error : null;
-  const methodInfo = WASTE_METHODS[method];
+  const moneyTypeInfo = getMoneyType(effectiveAmount);
 
   const handleSubmit = useCallback(() => {
     if (effectiveAmount < MIN_AMOUNT || effectiveAmount > MAX_AMOUNT) return;
     const formData = new FormData();
     formData.set("amount", String(effectiveAmount));
-    formData.set("method", method);
     formData.set("nickname", nickname);
     formData.set("message", message);
     fetcher.submit(formData, { method: "post" });
-  }, [effectiveAmount, method, nickname, message, fetcher]);
+  }, [effectiveAmount, nickname, message, fetcher]);
 
   return (
     <div className="min-h-screen">
@@ -215,7 +209,7 @@ export default function Burn({ loaderData }: Route.ComponentProps) {
             </h1>
           </div>
           <p className="text-text-muted text-sm">
-            Choose your amount. Pick your destruction method. No refunds. No
+            Choose your amount. Your money type reveals itself. No refunds. No
             regrets. Okay, maybe some regrets.
           </p>
         </div>
@@ -279,35 +273,37 @@ export default function Burn({ loaderData }: Route.ComponentProps) {
           )}
         </section>
 
-        {/* ─── METHOD ─── */}
+        {/* ─── MONEY TYPE (auto-derived from amount) ─── */}
         <section>
           <label className="block text-xs font-bold text-text-dim uppercase tracking-widest mb-4">
-            Destruction method
+            Your money type
           </label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {(Object.entries(WASTE_METHODS) as [WasteMethod, (typeof WASTE_METHODS)[WasteMethod]][]).map(
-              ([key, info]) => (
-                <button
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {Object.entries(MONEY_TYPES).map(([key, info]) => {
+              const isActive = effectiveAmount >= info.min && effectiveAmount <= info.max;
+              return (
+                <div
                   key={key}
-                  type="button"
-                  onClick={() => setMethod(key)}
                   className={cn(
-                    "relative rounded-xl border p-4 text-left transition-all group",
-                    method === key
-                      ? "border-primary/50 bg-primary/5 shadow-lg shadow-primary-glow"
-                      : "border-border bg-surface hover:border-primary/25 hover:bg-surface-hover"
+                    "relative rounded-xl border p-3 text-center transition-all",
+                    isActive
+                      ? "border-primary/50 bg-primary/5 shadow-lg shadow-primary-glow scale-105"
+                      : "border-border bg-surface opacity-40"
                   )}
                 >
-                  <div className="text-2xl mb-2">{info.icon}</div>
-                  <div className="font-[family-name:var(--font-display)] font-bold text-sm">
+                  <div className="text-2xl mb-1">{info.icon}</div>
+                  <div className="font-[family-name:var(--font-display)] font-bold text-[10px] leading-tight">
                     {info.label}
                   </div>
-                  {method === key && (
-                    <div className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-primary" />
+                  <div className="text-[9px] text-text-dim mt-0.5">
+                    {info.max === Infinity ? `₹${(info.min / 1000).toFixed(0)}K+` : `₹${info.min}–${info.max}`}
+                  </div>
+                  {isActive && (
+                    <div className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary" />
                   )}
-                </button>
-              )
-            )}
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -355,10 +351,10 @@ export default function Burn({ loaderData }: Route.ComponentProps) {
         {/* ─── SUMMARY + CTA ─── */}
         <div className="rounded-2xl border border-border bg-surface p-6">
           <div className="flex items-center justify-between mb-6">
-            <div className="text-sm text-text-muted">You are about to</div>
+            <div className="text-sm text-text-muted">You are about to burn</div>
             <div className="flex items-center gap-2 text-sm font-medium">
-              <span className="text-xl">{methodInfo.icon}</span>
-              <span style={{ color: methodInfo.color }}>{methodInfo.label}</span>
+              <span className="text-xl">{moneyTypeInfo.icon}</span>
+              <span style={{ color: moneyTypeInfo.color }}>{moneyTypeInfo.label}</span>
             </div>
           </div>
           <div className="text-center mb-6">
