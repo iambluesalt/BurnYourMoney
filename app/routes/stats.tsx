@@ -1,6 +1,5 @@
-import { useState } from "react";
 import { BarChart2, Flame } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useLoaderData, useNavigate, useSearchParams } from "react-router";
 import {
   LineChart,
   Line,
@@ -18,12 +17,27 @@ import {
 } from "recharts";
 import {
   getPlatformStats,
-  wasteOverTimeData,
-  wasteByMethodData,
-  wasteByAmountTierData,
-  wasteByDayOfWeekData,
-} from "~/lib/dummy-data";
+  getWasteOverTimePeriod,
+  getWasteByMoneyType,
+  getWasteByAmountTier,
+  getWasteByDayOfWeek,
+} from "~/lib/queries.server";
 import { formatCompactCurrency, cn } from "~/lib/utils";
+
+export async function loader({ request }: { request: Request }) {
+  const url = new URL(request.url);
+  const period = (url.searchParams.get("period") ?? "30d") as "7d" | "30d" | "3m" | "all";
+
+  const [stats, chartData, wasteByMethodData, wasteByAmountTierData, wasteByDayOfWeekData] = await Promise.all([
+    getPlatformStats(),
+    getWasteOverTimePeriod(period),
+    getWasteByMoneyType(),
+    getWasteByAmountTier(),
+    getWasteByDayOfWeek(),
+  ]);
+
+  return { stats, chartData, wasteByMethodData, wasteByAmountTierData, wasteByDayOfWeekData, period };
+}
 
 export function meta() {
   return [
@@ -49,10 +63,16 @@ const chartTooltipStyle = {
   labelStyle: { color: "#9C978E" },
 };
 
-const stats = getPlatformStats();
-
 export default function Stats() {
-  const [period, setPeriod] = useState<"7d" | "30d" | "3m" | "all">("30d");
+  const { stats, chartData, wasteByMethodData, wasteByAmountTierData, wasteByDayOfWeekData, period } = useLoaderData<typeof loader>();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  function handlePeriod(p: string) {
+    const params = new URLSearchParams(searchParams);
+    params.set("period", p);
+    navigate(`?${params.toString()}`, { replace: true });
+  }
 
   return (
     <div className="min-h-screen">
@@ -61,7 +81,7 @@ export default function Stats() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
           <Link to="/" className="group">
             <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight">
-              <span className="text-primary">.</span>waste<span className="text-primary">your</span>money
+              <span className="text-primary">.</span>burn<span className="text-primary">your</span>money
             </span>
           </Link>
           <div className="flex items-center gap-1">
@@ -118,7 +138,7 @@ export default function Stats() {
             },
             {
               label: "Avg Per Event",
-              value: `₹${(stats.totalWasted / stats.totalEvents).toFixed(2)}`,
+              value: stats.totalEvents > 0 ? `₹${(stats.totalWasted / stats.totalEvents).toFixed(2)}` : "burn something first",
               sub: "Per waste transaction",
             },
           ].map((stat) => (
@@ -147,7 +167,7 @@ export default function Stats() {
               {(["7d", "30d", "3m", "all"] as const).map((p) => (
                 <button
                   key={p}
-                  onClick={() => setPeriod(p)}
+                  onClick={() => handlePeriod(p)}
                   className={cn(
                     "px-3 py-1 rounded-lg text-xs font-bold transition-all border",
                     period === p
@@ -160,46 +180,54 @@ export default function Stats() {
               ))}
             </div>
           </div>
-          <p className="text-xs text-text-dim mb-6">Monthly totals — demo data</p>
+          <p className="text-xs text-text-dim mb-6">Live data from Supabase</p>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={wasteOverTimeData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A2A27" />
-                <XAxis
-                  dataKey="label"
-                  stroke="#6B6760"
-                  fontSize={11}
-                  tickLine={false}
-                />
-                <YAxis
-                  stroke="#6B6760"
-                  fontSize={12}
-                  tickFormatter={(v) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`}
-                  tickLine={false}
-                />
-                <Tooltip
-                  {...chartTooltipStyle}
-                  formatter={(value) => [
-                    `₹${Number(value).toLocaleString("en-IN")}`,
-                    "Burned",
-                  ]}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="amount"
-                  stroke="#FF6B35"
-                  strokeWidth={3}
-                  dot={{ fill: "#FF6B35", r: 5, strokeWidth: 2, stroke: "#141412" }}
-                  activeDot={{
-                    r: 7,
-                    fill: "#FF6B35",
-                    stroke: "#FF6B35",
-                    strokeWidth: 2,
-                    filter: "drop-shadow(0 0 8px #FF6B3560)",
-                  }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {chartData.length === 0 || chartData.every(d => d.amount === 0) ? (
+              <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
+                <div className="text-5xl">📉</div>
+                <p className="text-text-muted font-semibold">No burns in this period.</p>
+                <p className="text-text-dim text-sm">The timeline is embarrassingly clean. Go burn something.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2A2A27" />
+                  <XAxis
+                    dataKey="label"
+                    stroke="#6B6760"
+                    fontSize={11}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    stroke="#6B6760"
+                    fontSize={12}
+                    tickFormatter={(v) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    {...chartTooltipStyle}
+                    formatter={(value) => [
+                      `₹${Number(value).toLocaleString("en-IN")}`,
+                      "Burned",
+                    ]}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="amount"
+                    stroke="#FF6B35"
+                    strokeWidth={3}
+                    dot={{ fill: "#FF6B35", r: 5, strokeWidth: 2, stroke: "#141412" }}
+                    activeDot={{
+                      r: 7,
+                      fill: "#FF6B35",
+                      stroke: "#FF6B35",
+                      strokeWidth: 2,
+                      filter: "drop-shadow(0 0 8px #FF6B3560)",
+                    }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -212,40 +240,48 @@ export default function Stats() {
             </h3>
             <p className="text-xs text-text-dim mb-6">Where the world's waste lands</p>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={wasteByMethodData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={90}
-                    paddingAngle={3}
-                    dataKey="value"
-                    nameKey="type"
-                    stroke="none"
-                  >
-                    {wasteByMethodData.map((entry, index) => (
-                      <Cell key={index} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    {...chartTooltipStyle}
-                    formatter={(value) => [
-                      `₹${Number(value).toLocaleString("en-IN")}`,
-                      "Burned",
-                    ]}
-                  />
-                  <Legend
-                    verticalAlign="middle"
-                    align="right"
-                    layout="vertical"
-                    iconType="circle"
-                    iconSize={8}
-                    wrapperStyle={{ fontSize: "12px", color: "#9C978E" }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              {wasteByMethodData.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
+                  <div className="text-5xl">🥧</div>
+                  <p className="text-text-muted font-semibold">The pie is 100% vibes, 0% data.</p>
+                  <p className="text-text-dim text-sm">No burns categorized yet. Every tier is equally empty.</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={wasteByMethodData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={55}
+                      outerRadius={90}
+                      paddingAngle={3}
+                      dataKey="value"
+                      nameKey="type"
+                      stroke="none"
+                    >
+                      {wasteByMethodData.map((entry, index) => (
+                        <Cell key={index} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      {...chartTooltipStyle}
+                      formatter={(value) => [
+                        `₹${Number(value).toLocaleString("en-IN")}`,
+                        "Burned",
+                      ]}
+                    />
+                    <Legend
+                      verticalAlign="middle"
+                      align="right"
+                      layout="vertical"
+                      iconType="circle"
+                      iconSize={8}
+                      wrapperStyle={{ fontSize: "12px", color: "#9C978E" }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
@@ -256,22 +292,30 @@ export default function Stats() {
             </h3>
             <p className="text-xs text-text-dim mb-6">Distribution of waste sizes</p>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={wasteByAmountTierData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#2A2A27" />
-                  <XAxis dataKey="tier" stroke="#6B6760" fontSize={11} tickLine={false} />
-                  <YAxis stroke="#6B6760" fontSize={12} tickLine={false} />
-                  <Tooltip
-                    {...chartTooltipStyle}
-                    formatter={(value) => [`${value}`, "Events"]}
-                  />
-                  <Bar
-                    dataKey="count"
-                    fill="#FF6B35"
-                    radius={[6, 6, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+              {wasteByAmountTierData.every(d => d.count === 0) ? (
+                <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
+                  <div className="text-5xl">📊</div>
+                  <p className="text-text-muted font-semibold">All tiers at zero.</p>
+                  <p className="text-text-dim text-sm">A historic achievement in financial restraint. Sadly.</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={wasteByAmountTierData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#2A2A27" />
+                    <XAxis dataKey="tier" stroke="#6B6760" fontSize={11} tickLine={false} />
+                    <YAxis stroke="#6B6760" fontSize={12} tickLine={false} />
+                    <Tooltip
+                      {...chartTooltipStyle}
+                      formatter={(value) => [`${value}`, "Events"]}
+                    />
+                    <Bar
+                      dataKey="count"
+                      fill="#FF6B35"
+                      radius={[6, 6, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </div>
@@ -285,28 +329,36 @@ export default function Stats() {
             Which day sees the most money torched — pick your poison
           </p>
           <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={wasteByDayOfWeekData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#2A2A27" />
-                <XAxis dataKey="day" stroke="#6B6760" fontSize={12} tickLine={false} />
-                <YAxis
-                  stroke="#6B6760"
-                  fontSize={12}
-                  tickLine={false}
-                  tickFormatter={(v) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`}
-                />
-                <Tooltip
-                  {...chartTooltipStyle}
-                  formatter={(value, name) => [
-                    name === "total"
-                      ? `₹${Number(value).toLocaleString("en-IN")}`
-                      : `${value}`,
-                    name === "total" ? "Burned" : "Events",
-                  ]}
-                />
-                <Bar dataKey="total" fill="#FFB800" radius={[4, 4, 0, 0]} name="total" />
-              </BarChart>
-            </ResponsiveContainer>
+            {wasteByDayOfWeekData.every(d => d.total === 0) ? (
+              <div className="h-full flex flex-col items-center justify-center gap-2 text-center">
+                <div className="text-5xl">📅</div>
+                <p className="text-text-muted font-semibold">Not a rupee burned on any day.</p>
+                <p className="text-text-dim text-sm">Every day is equally pointless. Poetic, really.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={wasteByDayOfWeekData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#2A2A27" />
+                  <XAxis dataKey="day" stroke="#6B6760" fontSize={12} tickLine={false} />
+                  <YAxis
+                    stroke="#6B6760"
+                    fontSize={12}
+                    tickLine={false}
+                    tickFormatter={(v) => v >= 1000 ? `₹${(v / 1000).toFixed(0)}K` : `₹${v}`}
+                  />
+                  <Tooltip
+                    {...chartTooltipStyle}
+                    formatter={(value, name) => [
+                      name === "total"
+                        ? `₹${Number(value).toLocaleString("en-IN")}`
+                        : `${value}`,
+                      name === "total" ? "Burned" : "Events",
+                    ]}
+                  />
+                  <Bar dataKey="total" fill="#FFB800" radius={[4, 4, 0, 0]} name="total" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       </div>

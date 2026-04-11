@@ -54,12 +54,12 @@ export default function BurnReceipt({ loaderData }: Route.ComponentProps) {
           Home
         </Link>
         <div className="text-center">
-          <div className="text-6xl mb-4">🕳️</div>
+          <div className="text-6xl mb-4">🧾</div>
           <h1 className="font-[family-name:var(--font-display)] text-3xl font-bold mb-2">
-            Receipt Not Found
+            Receipt Vaporized
           </h1>
-          <p className="text-text-muted">
-            This burn doesn't exist on this device. Maybe it was burned too.
+          <p className="text-text-muted max-w-xs">
+            This burn has no record on this device. Either it happened on another device, or you cleared your history and now have plausible deniability. Smart.
           </p>
         </div>
       </div>

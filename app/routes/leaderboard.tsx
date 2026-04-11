@@ -1,9 +1,18 @@
 import { useState } from "react";
 import { Trophy, Flame } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { BurnDetailModal, type BurnDetail } from "~/components/burn-detail-modal";
-import { leaderboardAllTime, leaderboardMonthly, getTopSingleBurns } from "~/lib/dummy-data";
+import { getLeaderboard, getTopSingleBurns } from "~/lib/queries.server";
 import { formatCurrency, formatCompactCurrency, getMoneyType, cn } from "~/lib/utils";
+
+export async function loader() {
+  const [leaderboardAllTime, leaderboardMonthly, biggestBurns] = await Promise.all([
+    getLeaderboard("all-time"),
+    getLeaderboard("monthly"),
+    getTopSingleBurns(10),
+  ]);
+  return { leaderboardAllTime, leaderboardMonthly, biggestBurns };
+}
 
 export function meta() {
   return [
@@ -19,9 +28,8 @@ export function meta() {
 
 type TimeFrame = "all-time" | "monthly" | "biggest";
 
-const biggestBurns = getTopSingleBurns(10);
-
 export default function Leaderboard() {
+  const { leaderboardAllTime, leaderboardMonthly, biggestBurns } = useLoaderData<typeof loader>();
   const [timeFrame, setTimeFrame] = useState<TimeFrame>("all-time");
   const [selectedBurn, setSelectedBurn] = useState<BurnDetail | null>(null);
 
@@ -37,7 +45,7 @@ export default function Leaderboard() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
           <Link to="/" className="group">
             <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight">
-              <span className="text-primary">.</span>waste<span className="text-primary">your</span>money
+              <span className="text-primary">.</span>burn<span className="text-primary">your</span>money
             </span>
           </Link>
           <div className="flex items-center gap-1">
@@ -104,6 +112,13 @@ export default function Leaderboard() {
         {timeFrame === "biggest" ? (
           <>
             {/* ─── BIGGEST BURNS ─── */}
+            {biggestBurns.length === 0 && (
+              <div className="rounded-2xl border border-border bg-surface p-16 text-center">
+                <div className="text-5xl mb-4">🏆</div>
+                <p className="text-text-muted font-semibold mb-1">No big burns yet.</p>
+                <p className="text-text-dim text-sm">The throne is empty. Embarrassingly so.</p>
+              </div>
+            )}
             {biggestBurns[0] && (() => {
               const biggest = biggestBurns[0];
               const tier = getMoneyType(biggest.amount);
@@ -179,6 +194,18 @@ export default function Leaderboard() {
               </p>
             </div>
           </>
+        ) : entries.length === 0 ? (
+          <div className="rounded-2xl border border-border bg-surface p-16 text-center">
+            <div className="text-5xl mb-4">👀</div>
+            <p className="text-text-muted font-semibold mb-1">
+              {timeFrame === "monthly" ? "Nobody named this month." : "The board is empty."}
+            </p>
+            <p className="text-text-dim text-sm">
+              {timeFrame === "monthly"
+                ? "Anonymous burns don't count. Use a nickname, coward."
+                : "No named burners yet. Everyone's too embarrassed to claim their waste."}
+            </p>
+          </div>
         ) : (
           <>
             {/* ─── TOP 3 HIGHLIGHT ─── */}

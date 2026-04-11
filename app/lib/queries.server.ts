@@ -42,22 +42,20 @@ function serializeEvent(row: typeof wasteEvents.$inferSelect): WasteEventRow {
 
 // ── Queries ────────────────────────────────────────────────
 
-export function getRecentEvents(limit = 8): WasteEventRow[] {
-  const rows = db
+export async function getRecentEvents(limit = 8): Promise<WasteEventRow[]> {
+  const rows = await db
     .select()
     .from(wasteEvents)
     .orderBy(desc(wasteEvents.createdAt))
-    .limit(limit)
-    .all();
+    .limit(limit);
   return rows.map(serializeEvent);
 }
 
-export function getAllEvents(): WasteEventRow[] {
-  const rows = db
+export async function getAllEvents(): Promise<WasteEventRow[]> {
+  const rows = await db
     .select()
     .from(wasteEvents)
-    .orderBy(desc(wasteEvents.createdAt))
-    .all();
+    .orderBy(desc(wasteEvents.createdAt));
   return rows.map(serializeEvent);
 }
 
@@ -79,7 +77,7 @@ function tierAmountFilter(tier?: MoneyType) {
     : sql`${wasteEvents.amount} >= ${t.min} AND ${wasteEvents.amount} <= ${t.max}`;
 }
 
-export function getEventsPaginated({
+export async function getEventsPaginated({
   cursorId,
   tier,
   sort = "newest",
@@ -89,13 +87,12 @@ export function getEventsPaginated({
   tier?: MoneyType;
   sort?: "newest" | "biggest";
   limit?: number;
-}): EventsPage {
+}): Promise<EventsPage> {
   const fetchLimit = limit + 1; // fetch one extra to detect next page
   const amountFilter = tierAmountFilter(tier);
 
   if (sort === "newest") {
-    // Cursor on id (auto-increment = insertion order). Stable even with concurrent inserts.
-    const rows = db
+    const rows = await db
       .select()
       .from(wasteEvents)
       .where(and(
@@ -103,8 +100,7 @@ export function getEventsPaginated({
         cursorId ? lt(wasteEvents.id, cursorId) : undefined,
       ))
       .orderBy(desc(wasteEvents.id))
-      .limit(fetchLimit)
-      .all();
+      .limit(fetchLimit);
 
     const hasMore = rows.length > limit;
     const events = rows.slice(0, limit).map(serializeEvent);
@@ -112,16 +108,14 @@ export function getEventsPaginated({
   }
 
   // "biggest" sort — composite cursor on (amount DESC, id DESC).
-  // One extra lookup to find the cursor row's amount, then:
-  //   WHERE amount < cursorAmount OR (amount = cursorAmount AND id < cursorId)
   let cursorAmount: number | undefined;
   if (cursorId) {
-    const cursorRow = db
+    const cursorRows = await db
       .select({ amount: wasteEvents.amount })
       .from(wasteEvents)
       .where(eq(wasteEvents.id, cursorId))
-      .get();
-    cursorAmount = cursorRow?.amount;
+      .limit(1);
+    cursorAmount = cursorRows[0]?.amount;
   }
 
   const cursorCondition =
@@ -132,32 +126,27 @@ export function getEventsPaginated({
         )
       : undefined;
 
-  const rows = db
+  const rows = await db
     .select()
     .from(wasteEvents)
-    .where(and(
-      amountFilter,
-      cursorCondition,
-    ))
+    .where(and(amountFilter, cursorCondition))
     .orderBy(desc(wasteEvents.amount), desc(wasteEvents.id))
-    .limit(fetchLimit)
-    .all();
+    .limit(fetchLimit);
 
   const hasMore = rows.length > limit;
   const events = rows.slice(0, limit).map(serializeEvent);
   return { events, nextCursor: hasMore ? events[events.length - 1].id : null };
 }
 
-export function getPlatformStats(): PlatformStats {
-  const result = db
+export async function getPlatformStats(): Promise<PlatformStats> {
+  const result = await db
     .select({
       totalWasted: sum(wasteEvents.amount),
       totalEvents: count(),
     })
-    .from(wasteEvents)
-    .get();
+    .from(wasteEvents);
 
-  const burnersResult = db
+  const burnersResult = await db
     .select({ count: count() })
     .from(
       db
@@ -165,32 +154,28 @@ export function getPlatformStats(): PlatformStats {
         .from(wasteEvents)
         .where(sql`${wasteEvents.nickname} IS NOT NULL`)
         .as("distinct_nicks")
-    )
-    .get();
+    );
 
   return {
-    totalWasted: Number(result?.totalWasted ?? 0),
-    totalEvents: result?.totalEvents ?? 0,
-    totalBurners: burnersResult?.count ?? 0,
+    totalWasted: Number(result[0]?.totalWasted ?? 0),
+    totalEvents: result[0]?.totalEvents ?? 0,
+    totalBurners: burnersResult[0]?.count ?? 0,
   };
 }
 
-export function getLeaderboard(timeframe: "all-time" | "monthly"): LeaderboardEntry[] {
-  const baseQuery = timeframe === "monthly"
-    ? db
+export async function getLeaderboard(timeframe: "all-time" | "monthly"): Promise<LeaderboardEntry[]> {
+  const rows = timeframe === "monthly"
+    ? await db
         .select({
           nickname: wasteEvents.nickname,
           totalWasted: sum(wasteEvents.amount).as("total_wasted"),
           wasteCount: count().as("waste_count"),
         })
         .from(wasteEvents)
-        .where(
-          sql`${wasteEvents.nickname} IS NOT NULL AND ${wasteEvents.createdAt} >= ${Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000)}`
-        )
+        .where(sql`${wasteEvents.nickname} IS NOT NULL AND ${wasteEvents.createdAt} >= NOW() - INTERVAL '30 days'`)
         .groupBy(wasteEvents.nickname)
         .orderBy(sql`total_wasted DESC`)
-        .all()
-    : db
+    : await db
         .select({
           nickname: wasteEvents.nickname,
           totalWasted: sum(wasteEvents.amount).as("total_wasted"),
@@ -199,10 +184,9 @@ export function getLeaderboard(timeframe: "all-time" | "monthly"): LeaderboardEn
         .from(wasteEvents)
         .where(sql`${wasteEvents.nickname} IS NOT NULL`)
         .groupBy(wasteEvents.nickname)
-        .orderBy(sql`total_wasted DESC`)
-        .all();
+        .orderBy(sql`total_wasted DESC`);
 
-  return baseQuery.map((row) => {
+  return rows.map((row) => {
     const totalWasted = Number(row.totalWasted ?? 0);
     return {
       nickname: row.nickname!,
@@ -215,16 +199,15 @@ export function getLeaderboard(timeframe: "all-time" | "monthly"): LeaderboardEn
 
 // ── Chart Data ─────────────────────────────────────────────
 
-export function getWasteOverTime() {
-  const rows = db
+export async function getWasteOverTime() {
+  const rows = await db
     .select({
-      month: sql<string>`strftime('%Y-%m', datetime(${wasteEvents.createdAt}, 'unixepoch'))`.as("month"),
+      month: sql<string>`TO_CHAR(${wasteEvents.createdAt}, 'YYYY-MM')`.as("month"),
       amount: sum(wasteEvents.amount).as("amount"),
     })
     .from(wasteEvents)
-    .groupBy(sql`month`)
-    .orderBy(sql`month ASC`)
-    .all();
+    .groupBy(sql`TO_CHAR(${wasteEvents.createdAt}, 'YYYY-MM')`)
+    .orderBy(sql`TO_CHAR(${wasteEvents.createdAt}, 'YYYY-MM') ASC`);
 
   return rows.map((r) => {
     const [year, mon] = r.month.split("-");
@@ -233,28 +216,25 @@ export function getWasteOverTime() {
   });
 }
 
-export function getWasteOverTimePeriod(period: "7d" | "30d" | "3m" | "all") {
+export async function getWasteOverTimePeriod(period: "7d" | "30d" | "3m" | "all") {
   if (period === "all") {
     return getWasteOverTime();
   }
 
-  const days = period === "7d" ? 7 : period === "30d" ? 30 : 90;
-  const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
-  const cutoff = Math.floor(cutoffMs / 1000);
-
   if (period === "7d" || period === "30d") {
-    const rows = db
+    const days = period === "7d" ? 7 : 30;
+    const rows = await db
       .select({
-        dateKey: sql<string>`strftime('%Y-%m-%d', datetime(${wasteEvents.createdAt}, 'unixepoch'))`.as("dateKey"),
+        dateKey: sql<string>`TO_CHAR(${wasteEvents.createdAt}, 'YYYY-MM-DD')`.as("dateKey"),
         amount: sum(wasteEvents.amount).as("amount"),
       })
       .from(wasteEvents)
-      .where(sql`${wasteEvents.createdAt} >= ${cutoff}`)
-      .groupBy(sql`dateKey`)
-      .orderBy(sql`dateKey ASC`)
-      .all();
+      .where(sql`${wasteEvents.createdAt} >= NOW() - INTERVAL '${sql.raw(String(days))} days'`)
+      .groupBy(sql`TO_CHAR(${wasteEvents.createdAt}, 'YYYY-MM-DD')`)
+      .orderBy(sql`TO_CHAR(${wasteEvents.createdAt}, 'YYYY-MM-DD') ASC`);
 
     const dataMap = new Map(rows.map((r) => [r.dateKey, Number(r.amount ?? 0)]));
+    const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
     return Array.from({ length: days }, (_, i) => {
       const date = new Date(cutoffMs + (i + 1) * 24 * 60 * 60 * 1000);
       const key = date.toISOString().split("T")[0];
@@ -264,16 +244,15 @@ export function getWasteOverTimePeriod(period: "7d" | "30d" | "3m" | "all") {
   }
 
   // 3m — weekly buckets
-  const rows = db
+  const rows = await db
     .select({
-      week: sql<string>`strftime('%Y-%W', datetime(${wasteEvents.createdAt}, 'unixepoch'))`.as("week"),
+      week: sql<string>`TO_CHAR(${wasteEvents.createdAt}, 'IYYY-IW')`.as("week"),
       amount: sum(wasteEvents.amount).as("amount"),
     })
     .from(wasteEvents)
-    .where(sql`${wasteEvents.createdAt} >= ${cutoff}`)
-    .groupBy(sql`week`)
-    .orderBy(sql`week ASC`)
-    .all();
+    .where(sql`${wasteEvents.createdAt} >= NOW() - INTERVAL '90 days'`)
+    .groupBy(sql`TO_CHAR(${wasteEvents.createdAt}, 'IYYY-IW')`)
+    .orderBy(sql`TO_CHAR(${wasteEvents.createdAt}, 'IYYY-IW') ASC`);
 
   return rows.map((r, i) => ({
     label: `Wk ${i + 1}`,
@@ -281,17 +260,16 @@ export function getWasteOverTimePeriod(period: "7d" | "30d" | "3m" | "all") {
   }));
 }
 
-export function getWasteByDayOfWeek() {
-  const rows = db
+export async function getWasteByDayOfWeek() {
+  const rows = await db
     .select({
-      day: sql<number>`CAST(strftime('%w', datetime(${wasteEvents.createdAt}, 'unixepoch')) AS INTEGER)`.as("day"),
+      day: sql<number>`EXTRACT(DOW FROM ${wasteEvents.createdAt})::INTEGER`.as("day"),
       total: sum(wasteEvents.amount).as("total"),
       events: count().as("events"),
     })
     .from(wasteEvents)
-    .groupBy(sql`day`)
-    .orderBy(sql`day ASC`)
-    .all();
+    .groupBy(sql`EXTRACT(DOW FROM ${wasteEvents.createdAt})`)
+    .orderBy(sql`EXTRACT(DOW FROM ${wasteEvents.createdAt}) ASC`);
 
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const dataMap = new Map(rows.map((r) => [r.day, { total: Number(r.total ?? 0), events: r.events }]));
@@ -303,61 +281,74 @@ export function getWasteByDayOfWeek() {
   }));
 }
 
-export function getWasteByMoneyType() {
-  return Object.entries(MONEY_TYPES).map(([key, tier]) => {
-    const result = db
-      .select({ value: sum(wasteEvents.amount).as("value") })
-      .from(wasteEvents)
-      .where(
-        tier.max === Infinity
-          ? sql`${wasteEvents.amount} >= ${tier.min}`
-          : sql`${wasteEvents.amount} >= ${tier.min} AND ${wasteEvents.amount} <= ${tier.max}`
-      )
-      .get();
-    return {
-      type: tier.label,
-      value: Number(result?.value ?? 0),
-      color: tier.color,
-    };
-  }).filter((r) => r.value > 0);
-}
-
-export function getWasteByAmountTier() {
-  const tiers = [
-    { label: "₹1–₹10", min: 1, max: 10 },
-    { label: "₹10–₹25", min: 10, max: 25 },
-    { label: "₹25–₹50", min: 25, max: 50 },
-    { label: "₹50–₹100", min: 50, max: 100 },
-    { label: "₹100–₹250", min: 100, max: 250 },
-    { label: "₹250+", min: 250, max: Infinity },
-  ];
-
-  return tiers.map((tier) => {
-    const result = db
-      .select({ count: count() })
-      .from(wasteEvents)
-      .where(
-        tier.max === Infinity
-          ? sql`${wasteEvents.amount} >= ${tier.min}`
-          : sql`${wasteEvents.amount} >= ${tier.min} AND ${wasteEvents.amount} < ${tier.max}`
-      )
-      .get();
-    return { tier: tier.label, count: result?.count ?? 0 };
-  });
-}
-
-export function getHourlyDistribution() {
-  const rows = db
+export async function getWasteByMoneyType() {
+  // Single query with CASE bucketing — avoids N parallel connections
+  const rows = await db
     .select({
-      hour: sql<number>`CAST(strftime('%H', datetime(${wasteEvents.createdAt}, 'unixepoch')) AS INTEGER)`.as("hour"),
+      key: sql<string>`
+        CASE
+          WHEN ${wasteEvents.amount} >= 1     AND ${wasteEvents.amount} < 100   THEN 'coin'
+          WHEN ${wasteEvents.amount} >= 100   AND ${wasteEvents.amount} < 500   THEN 'note'
+          WHEN ${wasteEvents.amount} >= 500   AND ${wasteEvents.amount} < 1000  THEN 'splash'
+          WHEN ${wasteEvents.amount} >= 1000  AND ${wasteEvents.amount} < 5000  THEN 'bag'
+          WHEN ${wasteEvents.amount} >= 5000  AND ${wasteEvents.amount} < 25000 THEN 'fire'
+          WHEN ${wasteEvents.amount} >= 25000 AND ${wasteEvents.amount} < 100000 THEN 'diamond'
+          ELSE 'crown'
+        END
+      `.as("key"),
+      value: sum(wasteEvents.amount).as("value"),
+    })
+    .from(wasteEvents)
+    .groupBy(sql`1`);
+
+  return rows
+    .map((r) => {
+      const tier = MONEY_TYPES[r.key as keyof typeof MONEY_TYPES];
+      if (!tier) return null;
+      return { type: tier.label, value: Number(r.value ?? 0), color: tier.color };
+    })
+    .filter((r): r is NonNullable<typeof r> => r !== null && r.value > 0);
+}
+
+export async function getWasteByAmountTier() {
+  // Single query with CASE bucketing — avoids N parallel connections
+  const tierLabels: Record<number, string> = {
+    1: "₹1–₹10", 2: "₹10–₹25", 3: "₹25–₹50",
+    4: "₹50–₹100", 5: "₹100–₹250", 6: "₹250+",
+  };
+
+  const rows = await db
+    .select({
+      tierOrder: sql<number>`
+        CASE
+          WHEN ${wasteEvents.amount} >= 1   AND ${wasteEvents.amount} < 10  THEN 1
+          WHEN ${wasteEvents.amount} >= 10  AND ${wasteEvents.amount} < 25  THEN 2
+          WHEN ${wasteEvents.amount} >= 25  AND ${wasteEvents.amount} < 50  THEN 3
+          WHEN ${wasteEvents.amount} >= 50  AND ${wasteEvents.amount} < 100 THEN 4
+          WHEN ${wasteEvents.amount} >= 100 AND ${wasteEvents.amount} < 250 THEN 5
+          ELSE 6
+        END
+      `.as("tier_order"),
       count: count().as("count"),
     })
     .from(wasteEvents)
-    .groupBy(sql`hour`)
-    .orderBy(sql`hour ASC`)
-    .all();
+    .groupBy(sql`1`)
+    .orderBy(sql`1 ASC`);
 
-  // Fill all 24 hours, show every 2 hours for chart labels
+  const dataMap = new Map(rows.map((r) => [r.tierOrder, r.count]));
+  return [1, 2, 3, 4, 5, 6].map((o) => ({ tier: tierLabels[o], count: dataMap.get(o) ?? 0 }));
+}
+
+export async function getHourlyDistribution() {
+  const rows = await db
+    .select({
+      hour: sql<number>`EXTRACT(HOUR FROM ${wasteEvents.createdAt})::INTEGER`.as("hour"),
+      count: count().as("count"),
+    })
+    .from(wasteEvents)
+    .groupBy(sql`EXTRACT(HOUR FROM ${wasteEvents.createdAt})`)
+    .orderBy(sql`EXTRACT(HOUR FROM ${wasteEvents.createdAt}) ASC`);
+
   const hourMap = new Map(rows.map((r) => [r.hour, r.count]));
   const labels = [
     "12am", "1am", "2am", "3am", "4am", "5am",
@@ -377,46 +368,44 @@ export function getHourlyDistribution() {
 
 // ── SSE / Live Data ───────────────────────────────────────
 
-export function getEventsSince(sinceTimestamp: number): WasteEventRow[] {
-  const rows = db
+export async function getEventsSince(sinceTimestamp: number): Promise<WasteEventRow[]> {
+  const since = new Date(sinceTimestamp).toISOString();
+  const rows = await db
     .select()
     .from(wasteEvents)
-    .where(sql`${wasteEvents.createdAt} > ${Math.floor(sinceTimestamp / 1000)}`)
-    .orderBy(desc(wasteEvents.createdAt))
-    .all();
+    .where(sql`${wasteEvents.createdAt} > ${since}::timestamptz`)
+    .orderBy(desc(wasteEvents.createdAt));
   return rows.map(serializeEvent);
 }
 
-export function getLatestEventTimestamp(): number {
-  const row = db
+export async function getLatestEventTimestamp(): Promise<number> {
+  const rows = await db
     .select({ ts: wasteEvents.createdAt })
     .from(wasteEvents)
     .orderBy(desc(wasteEvents.createdAt))
-    .limit(1)
-    .get();
-  return row ? row.ts.getTime() : Date.now();
+    .limit(1);
+  return rows[0] ? rows[0].ts.getTime() : Date.now();
 }
 
 // ── Single Event ──────────────────────────────────────────
 
-export function getEventById(id: number) {
-  const row = db
+export async function getEventById(id: number) {
+  const rows = await db
     .select()
     .from(wasteEvents)
     .where(eq(wasteEvents.id, id))
-    .get();
-  return row ? serializeEvent(row) : null;
+    .limit(1);
+  return rows[0] ? serializeEvent(rows[0]) : null;
 }
 
 // ── Wall of Waste ──────────────────────────────────────────
 
-export function getTopSingleBurns(limit = 10) {
-  const rows = db
+export async function getTopSingleBurns(limit = 10) {
+  const rows = await db
     .select()
     .from(wasteEvents)
     .orderBy(desc(wasteEvents.amount))
-    .limit(limit)
-    .all();
+    .limit(limit);
 
   return rows.map((row, idx) => ({
     rank: idx + 1,
@@ -431,4 +420,29 @@ export function getTopSingleBurns(limit = 10) {
       year: "numeric",
     }),
   }));
+}
+
+// ── Insert ────────────────────────────────────────────────
+
+export async function insertBurnEvent({
+  amount,
+  method,
+  nickname,
+  message,
+}: {
+  amount: number;
+  method: string;
+  nickname?: string | null;
+  message?: string | null;
+}): Promise<WasteEventRow> {
+  const rows = await db
+    .insert(wasteEvents)
+    .values({
+      amount,
+      method,
+      nickname: nickname || null,
+      message: message || null,
+    })
+    .returning();
+  return serializeEvent(rows[0]);
 }

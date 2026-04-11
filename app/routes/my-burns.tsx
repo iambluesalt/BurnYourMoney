@@ -56,7 +56,7 @@ export default function MyBurns({ loaderData }: Route.ComponentProps) {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
           <Link to="/" className="group">
             <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight">
-              <span className="text-primary">.</span>waste<span className="text-primary">your</span>money
+              <span className="text-primary">.</span>burn<span className="text-primary">your</span>money
             </span>
           </Link>
           <div className="flex items-center gap-1">
@@ -99,12 +99,12 @@ export default function MyBurns({ loaderData }: Route.ComponentProps) {
           <div className="rounded-2xl border border-border bg-surface p-12 text-center">
             <div className="text-5xl mb-4">🕳️</div>
             <h2 className="font-[family-name:var(--font-display)] text-xl font-bold mb-2">
-              No burns yet
+              {cleared ? "History Obliterated" : "Financially Untouched"}
             </h2>
             <p className="text-text-muted text-sm mb-8">
               {cleared
-                ? "History cleared. Start fresh."
-                : "Burns you make on this device will appear here."}
+                ? "Your burn history has been erased. The regrets, however, are permanent."
+                : "Your wallet is embarrassingly intact. No burns recorded on this device."}
             </p>
             <Link
               to="/burn"

@@ -1,9 +1,17 @@
 import { useState, useMemo } from "react";
 import { Flame, Clock, ArrowUpDown, LayoutGrid, Table2, ChevronDown } from "lucide-react";
-import { Link } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { BurnDetailModal, type BurnDetail } from "~/components/burn-detail-modal";
-import { wasteEvents, getPlatformStats, type WasteEvent } from "~/lib/dummy-data";
+import { getAllEvents, getPlatformStats } from "~/lib/queries.server";
 import { formatCurrency, formatCompactCurrency, timeAgo, getMoneyType, MONEY_TYPES, type MoneyType, cn } from "~/lib/utils";
+
+export async function loader() {
+  const [events, stats] = await Promise.all([
+    getAllEvents(),
+    getPlatformStats(),
+  ]);
+  return { events, stats };
+}
 
 export function meta() {
   return [
@@ -21,9 +29,9 @@ type SortOption = "newest" | "biggest";
 type ViewMode = "grid" | "table";
 
 const PAGE_SIZE = 24;
-const stats = getPlatformStats();
 
 export default function Feed() {
+  const { events: allEvents, stats } = useLoaderData<typeof loader>();
   const [tierFilter, setTierFilter] = useState<MoneyType | "all">("all");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -31,7 +39,7 @@ export default function Feed() {
   const [selectedBurn, setSelectedBurn] = useState<BurnDetail | null>(null);
 
   const filtered = useMemo(() => {
-    let result = [...wasteEvents];
+    let result = [...allEvents];
 
     if (tierFilter !== "all") {
       const tier = MONEY_TYPES[tierFilter];
@@ -45,7 +53,7 @@ export default function Feed() {
     }
 
     return result;
-  }, [tierFilter, sortBy]);
+  }, [allEvents, tierFilter, sortBy]);
 
   const events = filtered.slice(0, shown);
   const hasMore = shown < filtered.length;
@@ -67,7 +75,7 @@ export default function Feed() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
           <Link to="/" className="group">
             <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight">
-              <span className="text-primary">.</span>waste<span className="text-primary">your</span>money
+              <span className="text-primary">.</span>burn<span className="text-primary">your</span>money
             </span>
           </Link>
           <div className="flex items-center gap-1">
@@ -182,7 +190,7 @@ export default function Feed() {
         {/* ─── GRID VIEW ─── */}
         {viewMode === "grid" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {events.map((event: WasteEvent) => {
+            {events.map((event) => {
               const tier = getMoneyType(event.amount);
               return (
                 <button
@@ -230,7 +238,7 @@ export default function Feed() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {events.map((event: WasteEvent) => {
+                {events.map((event) => {
                   const tier = getMoneyType(event.amount);
                   return (
                     <tr
@@ -285,9 +293,19 @@ export default function Feed() {
         {/* ─── EMPTY STATE ─── */}
         {events.length === 0 && (
           <div className="text-center py-20">
-            <div className="text-5xl mb-4">🔥</div>
-            <p className="text-text-muted text-lg">No waste events match your filter.</p>
-            <p className="text-text-dim text-sm mt-1">Be the first to burn some money.</p>
+            {tierFilter !== "all" ? (
+              <>
+                <div className="text-5xl mb-4">🔍</div>
+                <p className="text-text-muted text-lg">Nobody's wasting at this tier. Yet.</p>
+                <p className="text-text-dim text-sm mt-1">Be the first cautionary tale in this category.</p>
+              </>
+            ) : (
+              <>
+                <div className="text-5xl mb-4">🕳️</div>
+                <p className="text-text-muted text-lg">The feed is suspiciously empty.</p>
+                <p className="text-text-dim text-sm mt-1">Not a single rupee wasted. This is either very early days or humanity briefly came to its senses.</p>
+              </>
+            )}
           </div>
         )}
 

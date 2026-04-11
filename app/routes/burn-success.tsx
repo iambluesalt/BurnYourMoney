@@ -169,7 +169,7 @@ export default function BurnSuccess() {
           </>
         ) : (
           <p className="text-text-muted text-lg mb-8">
-            Your money has been successfully destroyed. There is no going back.
+            You somehow arrived here without burning anything. The void is confused. So are we.
           </p>
         )}
 

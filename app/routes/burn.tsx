@@ -1,7 +1,33 @@
-import { useState, useCallback } from "react";
-import { Link, useNavigate } from "react-router";
-import { Flame, ArrowLeft, Sparkles, Skull, AlertTriangle, X } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Link, useLoaderData, useFetcher, useSubmit, useNavigate } from "react-router";
+import { Flame, ArrowLeft, AlertTriangle, X, Loader2, Skull } from "lucide-react";
+import { razorpay, RAZORPAY_KEY_ID } from "~/lib/razorpay.server";
 import { MONEY_TYPES, getMoneyType, getMoneyTypeKey, cn, formatINR } from "~/lib/utils";
+
+export async function loader() {
+  return { keyId: RAZORPAY_KEY_ID };
+}
+
+export async function action({ request }: { request: Request }) {
+  const formData = await request.formData();
+  const amount = Number(formData.get("amount"));
+
+  if (!amount || amount < 1 || amount > 999999) {
+    throw new Response("Invalid amount", { status: 400 });
+  }
+
+  const order = await razorpay.orders.create({
+    amount: Math.round(amount * 100), // Razorpay expects paise
+    currency: "INR",
+    receipt: `burn_${Date.now()}`,
+  });
+
+  return {
+    orderId: String(order.id),
+    amount: Number(order.amount),
+    currency: String(order.currency),
+  };
+}
 
 export function meta() {
   return [
@@ -20,6 +46,9 @@ const MIN_AMOUNT = 1;
 const MAX_AMOUNT = 999999;
 
 export default function Burn() {
+  const { keyId } = useLoaderData<typeof loader>();
+  const orderFetcher = useFetcher<typeof action>();
+  const submit = useSubmit();
   const navigate = useNavigate();
 
   const [amount, setAmount] = useState<number>(100);
@@ -32,6 +61,69 @@ export default function Burn() {
 
   const effectiveAmount = isCustom ? Number(customAmount) || 0 : amount;
   const moneyTypeInfo = getMoneyType(effectiveAmount);
+  const isCreatingOrder = orderFetcher.state !== "idle";
+
+  // Capture burn metadata for use inside the Razorpay handler closure
+  const burnMeta = useRef({ nickname: "", message: "", method: "", amount: 0 });
+  // Track which orderId has already been opened to prevent double-firing
+  const openedOrderRef = useRef<string | null>(null);
+
+  // Load Razorpay checkout script
+  useEffect(() => {
+    if (document.querySelector('script[src*="checkout.razorpay"]')) return;
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    document.body.appendChild(script);
+  }, []);
+
+  // Open Razorpay modal once order is created
+  useEffect(() => {
+    if (orderFetcher.state !== "idle" || !orderFetcher.data) return;
+    const { orderId, amount: orderAmount, currency } = orderFetcher.data;
+
+    if (openedOrderRef.current === orderId) return;
+    openedOrderRef.current = orderId;
+
+    type RzpResponse = {
+      razorpay_payment_id: string;
+      razorpay_order_id: string;
+      razorpay_signature: string;
+    };
+
+    const options = {
+      key: keyId,
+      amount: orderAmount,
+      currency,
+      name: "BurnYourMoney",
+      description: `${moneyTypeInfo.label} — burn it all`,
+      order_id: orderId,
+      handler(response: RzpResponse) {
+        submit(
+          {
+            paymentId: response.razorpay_payment_id,
+            orderId: response.razorpay_order_id,
+            signature: response.razorpay_signature,
+            amount: String(burnMeta.current.amount),
+            method: burnMeta.current.method,
+            nickname: burnMeta.current.nickname,
+            message: burnMeta.current.message,
+          },
+          { method: "post", action: "/burn/verify" }
+        );
+      },
+      prefill: { name: burnMeta.current.nickname || "Anonymous" },
+      theme: { color: "#FF6B35" },
+      modal: {
+        ondismiss() {
+          openedOrderRef.current = null;
+        },
+      },
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rzp = new (window as any).Razorpay(options);
+    rzp.open();
+  }, [orderFetcher.state, orderFetcher.data, keyId, moneyTypeInfo.label, submit]);
 
   const handleSubmit = useCallback(() => {
     if (effectiveAmount < MIN_AMOUNT || effectiveAmount > MAX_AMOUNT) return;
@@ -41,29 +133,31 @@ export default function Burn() {
 
   const handleConfirm = useCallback(() => {
     setWarningOpen(false);
-    const id = `burn_${Date.now()}`;
-    const params = new URLSearchParams({
-      id,
-      amount: String(effectiveAmount),
+    burnMeta.current = {
       nickname: nickname.trim(),
       message: message.trim(),
       method: getMoneyTypeKey(effectiveAmount),
-    });
-    navigate(`/burn/success?${params.toString()}`);
-  }, [effectiveAmount, nickname, message, navigate]);
+      amount: effectiveAmount,
+    };
+    orderFetcher.submit(
+      { amount: String(effectiveAmount) },
+      { method: "post" }
+    );
+  }, [effectiveAmount, nickname, message, orderFetcher]);
 
   return (
     <div className="min-h-screen">
       {/* ─── HEADER ─── */}
       <div className="border-b border-border bg-surface/30">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
-          <Link
-            to="/"
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
             className="inline-flex items-center gap-2 text-sm text-text-dim hover:text-text transition-colors mb-6"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to safety
-          </Link>
+          </button>
           <div className="flex items-center gap-3 mb-2">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20">
               <Flame className="h-6 w-6 text-primary" />
@@ -225,23 +319,32 @@ export default function Burn() {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={effectiveAmount < MIN_AMOUNT || effectiveAmount > MAX_AMOUNT}
+            disabled={effectiveAmount < MIN_AMOUNT || effectiveAmount > MAX_AMOUNT || isCreatingOrder}
             className={cn(
               "w-full flex items-center justify-center gap-3 rounded-2xl py-4 text-lg font-extrabold transition-all",
-              effectiveAmount < MIN_AMOUNT || effectiveAmount > MAX_AMOUNT
+              effectiveAmount < MIN_AMOUNT || effectiveAmount > MAX_AMOUNT || isCreatingOrder
                 ? "bg-surface-hover text-text-dim cursor-not-allowed border border-border"
                 : "bg-primary text-background hover:bg-primary-hover hover:shadow-xl hover:shadow-primary-glow active:scale-[0.98]"
             )}
           >
-            <Flame className="h-5 w-5" />
-            {effectiveAmount >= MIN_AMOUNT
-              ? `Burn ${formatINR(effectiveAmount)} Now`
-              : "Enter an amount"}
+            {isCreatingOrder ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Opening payment…
+              </>
+            ) : (
+              <>
+                <Flame className="h-5 w-5" />
+                {effectiveAmount >= MIN_AMOUNT
+                  ? `Burn ${formatINR(effectiveAmount)} Now`
+                  : "Enter an amount"}
+              </>
+            )}
           </button>
 
           <p className="text-center text-text-dim text-xs mt-4 flex items-center justify-center gap-1.5">
             <Skull className="h-3 w-3" />
-            No refunds. Demo mode — no real payment.
+            No refunds. Powered by Razorpay.
           </p>
           <p className="text-center text-text-dim/60 text-xs mt-2">
             By burning you agree to our{" "}
@@ -278,7 +381,7 @@ export default function Burn() {
             <p className="text-text-muted text-sm text-center mb-6">
               You are about to burn{" "}
               <span className="font-bold fire-glow">{formatINR(effectiveAmount)}</span>{" "}
-              into the void. This is a demo burn. No real money is charged.
+              into the void. Real money. No returns.
             </p>
 
             <div className="rounded-xl border border-border bg-background/50 p-4 space-y-3 mb-6 text-sm text-text-muted">

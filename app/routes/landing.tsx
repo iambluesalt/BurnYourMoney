@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { ArrowRight, Flame, TrendingUp, Users, Zap, Trophy, CheckCircle2 } from "lucide-react";
 import { BurnDetailModal, type BurnDetail } from "~/components/burn-detail-modal";
 import {
@@ -12,11 +12,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import {
-  wasteEvents,
-  wasteOverTimeData,
   getPlatformStats,
+  getRecentEvents,
   getTopSingleBurns,
-} from "~/lib/dummy-data";
+  getWasteOverTime,
+} from "~/lib/queries.server";
 import { formatCurrency, formatCompactCurrency, formatBigCounter, timeAgo, getMoneyType } from "~/lib/utils";
 
 function WasteTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) {
@@ -29,6 +29,16 @@ function WasteTooltip({ active, payload, label }: { active?: boolean; payload?: 
       </p>
     </div>
   );
+}
+
+export async function loader() {
+  const [stats, recentEvents, topWastes, chartData] = await Promise.all([
+    getPlatformStats(),
+    getRecentEvents(8),
+    getTopSingleBurns(3),
+    getWasteOverTime(),
+  ]);
+  return { stats, recentEvents, topWastes, chartData };
 }
 
 export function meta() {
@@ -45,25 +55,21 @@ export function meta() {
   ];
 }
 
-const stats = getPlatformStats();
-const recentEvents = wasteEvents.slice(0, 8);
-const topWastes = getTopSingleBurns(3);
-const chartData = wasteOverTimeData;
-
 export default function Landing() {
+  const { stats, recentEvents, topWastes, chartData } = useLoaderData<typeof loader>();
   const [selectedBurn, setSelectedBurn] = useState<BurnDetail | null>(null);
 
   // Podium order: 2nd place left, 1st place center, 3rd place right
   const podiumOrder = [topWastes[1], topWastes[0], topWastes[2]].filter(Boolean);
 
   return (
-    <div className="min-h-screen overflow-hidden">
+    <div className="min-h-screen">
       {/* ─── NAV ─── */}
       <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
           <Link to="/" className="group">
             <span className="font-[family-name:var(--font-display)] text-xl font-bold tracking-tight">
-              <span className="text-primary">.</span>waste<span className="text-primary">your</span>money
+              <span className="text-primary">.</span>burn<span className="text-primary">your</span>money
             </span>
           </Link>
           <div className="flex items-center gap-1">
@@ -83,7 +89,7 @@ export default function Landing() {
       </nav>
 
       {/* ─── HERO ─── */}
-      <section className="relative">
+      <section className="relative overflow-hidden">
         <div className="absolute inset-0 hero-radial pointer-events-none" />
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-primary/5 rounded-full blur-[120px] pointer-events-none" />
 
@@ -484,7 +490,7 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="font-[family-name:var(--font-display)] font-bold">
-              <span className="text-primary">.</span>waste<span className="text-primary">your</span>money
+              <span className="text-primary">.</span>burn<span className="text-primary">your</span>money
             </div>
             <div className="flex items-center gap-6 text-sm text-text-dim">
               <Link to="/feed" className="hover:text-text transition-colors">Feed</Link>

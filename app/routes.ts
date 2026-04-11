@@ -7,6 +7,7 @@ export default [
   route("analytics", "routes/stats.tsx"),
   route("burn", "routes/burn.tsx"),
   route("burn/success", "routes/burn-success.tsx"),
+  route("burn/verify", "routes/burn-verify.tsx"),
   route("burn/cancel", "routes/burn-cancel.tsx"),
   route("burn/receipt/:id", "routes/burn-receipt.tsx"),
   route("my-burns", "routes/my-burns.tsx"),

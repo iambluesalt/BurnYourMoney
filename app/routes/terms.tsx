@@ -1,4 +1,4 @@
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { Flame, ArrowLeft } from "lucide-react";
 
 export function meta() {
@@ -94,6 +94,7 @@ If you disagree with any terms, your option is simple: don't burn.`,
 ];
 
 export default function Terms() {
+  const navigate = useNavigate();
   return (
     <div className="min-h-screen">
       {/* ─── NAV ─── */}
@@ -117,13 +118,14 @@ export default function Terms() {
       {/* ─── HEADER ─── */}
       <div className="border-b border-border bg-surface/30">
         <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8 py-10">
-          <Link
-            to="/"
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
             className="inline-flex items-center gap-2 text-sm text-text-dim hover:text-text transition-colors mb-6"
           >
             <ArrowLeft className="h-4 w-4" />
             Back
-          </Link>
+          </button>
           <h1 className="font-[family-name:var(--font-display)] text-3xl sm:text-4xl font-extrabold mb-2">
             Terms & Conditions
           </h1>

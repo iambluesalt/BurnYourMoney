@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { formatCurrency, getMoneyType, timeAgo } from "~/lib/utils";
 
 export interface BurnDetail {
-  id?: number;
+  id?: number | string;
   amount: number;
   method: string;
   nickname: string | null;

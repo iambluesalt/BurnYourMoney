@@ -1,48 +1,25 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
 import { wasteEvents } from "../app/lib/schema.server";
-import path from "node:path";
 
-const dbPath = path.resolve("data/waste.db");
-const sqlite = new Database(dbPath);
-sqlite.pragma("journal_mode = WAL");
-const db = drizzle(sqlite);
+const client = postgres(process.env.DATABASE_URL!);
+const db = drizzle(client);
 
 type WasteMethod = "burn" | "shred" | "flush" | "yeet" | "blackhole" | "feed";
 
 const METHODS: WasteMethod[] = ["burn", "shred", "flush", "yeet", "blackhole", "feed"];
 
 const NICKNAMES: (string | null)[] = [
-  "FlameLord",
-  "VoidMaster",
-  "YeetKing",
-  "ShredQueen",
-  "FlushGordon",
-  "VoidFeeder",
-  "AshBaron",
-  "BurnNotice",
-  "TrashPanda",
-  "MoneyPit",
-  null,
-  null,
-  null,
+  "FlameLord", "VoidMaster", "YeetKing", "ShredQueen",
+  "FlushGordon", "VoidFeeder", "AshBaron", "BurnNotice",
+  "TrashPanda", "MoneyPit", null, null, null,
 ];
 
 const MESSAGES: (string | null)[] = [
-  "Worth every penny of nothing",
-  "My wallet screamed",
-  "Goodbye savings",
-  "This is fine",
-  "Money is just paper anyway",
-  "YOLO",
-  "My therapist told me not to",
-  "For science",
-  "No ragrets",
-  "Burning bright",
-  null,
-  null,
-  null,
-  null,
+  "Worth every penny of nothing", "My wallet screamed", "Goodbye savings",
+  "This is fine", "Money is just paper anyway", "YOLO",
+  "My therapist told me not to", "For science", "No ragrets",
+  "Burning bright", null, null, null, null,
 ];
 
 function pick<T>(arr: T[]): T {
@@ -59,12 +36,11 @@ function randAmount(): number {
 }
 
 function randDate(daysBack: number): Date {
-  const now = Date.now();
-  return new Date(now - Math.random() * daysBack * 24 * 60 * 60 * 1000);
+  return new Date(Date.now() - Math.random() * daysBack * 24 * 60 * 60 * 1000);
 }
 
 console.log("Clearing existing data...");
-db.delete(wasteEvents).run();
+await db.delete(wasteEvents);
 
 console.log("Seeding waste events...");
 
@@ -81,55 +57,19 @@ for (let i = 0; i < 200; i++) {
   });
 }
 
-// Notable big burns for Wall of Waste
+// Notable big burns for Wall of Shame
 rows.push(
-  {
-    amount: 50000,
-    method: "yeet",
-    nickname: "YeetKing",
-    message: "Half a lakh, gone. You're welcome.",
-    createdAt: randDate(30),
-  },
-  {
-    amount: 25000,
-    method: "burn",
-    nickname: "FlameLord",
-    message: "Watch it burn",
-    createdAt: randDate(20),
-  },
-  {
-    amount: 15000,
-    method: "blackhole",
-    nickname: null,
-    message: null,
-    createdAt: randDate(15),
-  },
-  {
-    amount: 10000,
-    method: "blackhole",
-    nickname: "VoidMaster",
-    message: "Into the void",
-    createdAt: randDate(10),
-  },
-  {
-    amount: 8000,
-    method: "shred",
-    nickname: "ShredQueen",
-    message: "Shredded with style",
-    createdAt: randDate(5),
-  }
+  { amount: 50000, method: "yeet",      nickname: "YeetKing",   message: "Half a lakh, gone. You're welcome.", createdAt: randDate(30) },
+  { amount: 25000, method: "burn",      nickname: "FlameLord",  message: "Watch it burn",                      createdAt: randDate(20) },
+  { amount: 15000, method: "blackhole", nickname: null,         message: null,                                 createdAt: randDate(15) },
+  { amount: 10000, method: "blackhole", nickname: "VoidMaster", message: "Into the void",                      createdAt: randDate(10) },
+  { amount: 8000,  method: "shred",     nickname: "ShredQueen", message: "Shredded with style",                createdAt: randDate(5) },
 );
 
-// Insert in a transaction for speed
-db.transaction((tx) => {
-  for (const row of rows) {
-    tx.insert(wasteEvents).values(row).run();
-  }
-});
+await db.insert(wasteEvents).values(rows);
 
-const { total: count } = sqlite.prepare("SELECT COUNT(*) as total FROM waste_events").get() as { total: number };
-const total = sqlite.prepare("SELECT SUM(amount) as total FROM waste_events").get() as { total: number };
+const result = await db.select().from(wasteEvents);
+const total = result.reduce((sum, r) => sum + r.amount, 0);
+console.log(`Seeded ${result.length} events, total: ₹${total.toLocaleString("en-IN")}`);
 
-console.log(`Seeded ${count} events, total: ₹${total.total.toLocaleString("en-IN")}`);
-
-sqlite.close();
+await client.end();
