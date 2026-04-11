@@ -29,7 +29,7 @@ export function Layout({ children }: Readonly<{ children: React.ReactNode }>) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>WasteYourMoney — Burn Real Money For No Reason</title>
+        <title>BurnYourMoney — Burn Real Money For No Reason</title>
         <meta
           name="description"
           content="The internet's most honest transaction. Pay real money. Get absolutely nothing. Watch it burn on the leaderboard."

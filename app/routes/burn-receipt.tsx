@@ -1,45 +1,47 @@
 import { Link } from "react-router";
 import { ArrowLeft } from "lucide-react";
-import { getEventById } from "~/lib/queries.server";
 import { formatINR, getMoneyType } from "~/lib/utils";
 import type { Route } from "./+types/burn-receipt";
 
-export function meta({ data }: Route.MetaArgs) {
-  if (!data?.event) {
-    return [
-      { title: "Burn Receipt — WasteYourMoney" },
-      { name: "description", content: "This burn receipt doesn't exist." },
-    ];
-  }
+interface LocalBurnEvent {
+  id: string;
+  amount: number;
+  nickname: string | null;
+  message: string | null;
+  method: string;
+  createdAt: string;
+}
 
-  const { event } = data;
-  const method = getMoneyType(event.amount);
-  const title = `${method.icon} ${formatINR(event.amount)} ${method.verb} — WasteYourMoney`;
-  const description = `${event.nickname || "Anonymous"} just ${method.verb} ${formatINR(event.amount)} into the void.${event.message ? ` "${event.message}"` : ""}`;
-
+export function meta() {
   return [
-    { title },
-    { name: "description", content: description },
-    { property: "og:title", content: title },
-    { property: "og:description", content: description },
-    { property: "og:type", content: "website" },
-    { property: "og:site_name", content: "WasteYourMoney" },
-    { name: "twitter:card", content: "summary_large_image" },
-    { name: "twitter:title", content: title },
-    { name: "twitter:description", content: description },
+    { title: "Burn Receipt — BurnYourMoney" },
+    { name: "description", content: "Your personal burn receipt." },
+    { property: "og:site_name", content: "BurnYourMoney" },
   ];
 }
 
-export function loader({ params }: Route.LoaderArgs) {
-  const id = Number(params.id);
-  if (!id) return { event: null };
+export async function clientLoader({ params }: Route.ClientLoaderArgs) {
+  const id = params.id;
+  try {
+    const stored: LocalBurnEvent[] = JSON.parse(localStorage.getItem("bym_events") || "[]");
+    const event = stored.find((e) => e.id === id) ?? null;
+    return { event };
+  } catch {
+    return { event: null };
+  }
+}
+clientLoader.hydrate = true as const;
 
-  const event = getEventById(id);
-  return { event };
+export function HydrateFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-text-dim text-sm animate-pulse">Loading receipt…</div>
+    </div>
+  );
 }
 
 export default function BurnReceipt({ loaderData }: Route.ComponentProps) {
-  const { event } = loaderData;
+  const { event } = loaderData as { event: LocalBurnEvent | null };
 
   if (!event) {
     return (
@@ -57,7 +59,7 @@ export default function BurnReceipt({ loaderData }: Route.ComponentProps) {
             Receipt Not Found
           </h1>
           <p className="text-text-muted">
-            This burn doesn't exist. Maybe it was burned too.
+            This burn doesn't exist on this device. Maybe it was burned too.
           </p>
         </div>
       </div>
@@ -86,7 +88,7 @@ export default function BurnReceipt({ loaderData }: Route.ComponentProps) {
         Home
       </Link>
 
-      {/* Receipt card — optimized for 1200×630 OG ratio */}
+      {/* Receipt card */}
       <div className="w-full max-w-xl">
         <div className="relative rounded-3xl border-2 border-border bg-surface overflow-hidden">
           {/* Top accent bar */}
@@ -101,11 +103,11 @@ export default function BurnReceipt({ loaderData }: Route.ComponentProps) {
               <div className="flex items-center gap-2">
                 <span className="text-primary text-lg">🔥</span>
                 <span className="font-[family-name:var(--font-display)] text-sm font-bold tracking-tight">
-                  Waste<span className="text-primary">Your</span>Money
+                  Burn<span className="text-primary">Your</span>Money
                 </span>
               </div>
               <div className="text-xs text-text-dim font-mono">
-                #{String(event.id).padStart(6, "0")}
+                #{event.id.replace("burn_", "").slice(-6).padStart(6, "0")}
               </div>
             </div>
 
@@ -129,31 +131,19 @@ export default function BurnReceipt({ loaderData }: Route.ComponentProps) {
             {/* Details grid */}
             <div className="grid grid-cols-2 gap-4 text-sm mb-6">
               <div>
-                <div className="text-text-dim text-xs uppercase tracking-widest mb-1">
-                  Waster
-                </div>
-                <div className="font-semibold">
-                  {event.nickname || "Anonymous"}
-                </div>
+                <div className="text-text-dim text-xs uppercase tracking-widest mb-1">Waster</div>
+                <div className="font-semibold">{event.nickname || "Anonymous"}</div>
               </div>
               <div className="text-right">
-                <div className="text-text-dim text-xs uppercase tracking-widest mb-1">
-                  Date
-                </div>
+                <div className="text-text-dim text-xs uppercase tracking-widest mb-1">Date</div>
                 <div className="font-semibold">{formattedDate}</div>
               </div>
               <div>
-                <div className="text-text-dim text-xs uppercase tracking-widest mb-1">
-                  Type
-                </div>
-                <div className="font-semibold">
-                  {method.icon} {method.label}
-                </div>
+                <div className="text-text-dim text-xs uppercase tracking-widest mb-1">Type</div>
+                <div className="font-semibold">{method.icon} {method.label}</div>
               </div>
               <div className="text-right">
-                <div className="text-text-dim text-xs uppercase tracking-widest mb-1">
-                  Time
-                </div>
+                <div className="text-text-dim text-xs uppercase tracking-widest mb-1">Time</div>
                 <div className="font-semibold">{formattedTime}</div>
               </div>
             </div>
@@ -163,12 +153,8 @@ export default function BurnReceipt({ loaderData }: Route.ComponentProps) {
               <>
                 <div className="border-t border-dashed border-border my-6" />
                 <div>
-                  <div className="text-text-dim text-xs uppercase tracking-widest mb-2">
-                    Last Words
-                  </div>
-                  <p className="text-text-muted italic text-sm">
-                    "{event.message}"
-                  </p>
+                  <div className="text-text-dim text-xs uppercase tracking-widest mb-2">Last Words</div>
+                  <p className="text-text-muted italic text-sm">"{event.message}"</p>
                 </div>
               </>
             )}
@@ -176,7 +162,7 @@ export default function BurnReceipt({ loaderData }: Route.ComponentProps) {
             {/* Footer */}
             <div className="border-t border-dashed border-border mt-6 pt-6">
               <div className="flex items-center justify-between text-xs text-text-dim">
-                <span>wasteyourmoney.com</span>
+                <span>burnyourmoney.com</span>
                 <span>No refunds. No ragrets.</span>
               </div>
             </div>

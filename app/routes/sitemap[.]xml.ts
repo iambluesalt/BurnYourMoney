@@ -1,5 +1,5 @@
 export function loader() {
-  const baseUrl = "https://wasteyourmoney.com";
+  const baseUrl = "https://burnyourmoney.com";
   const routes = [
     { path: "/", priority: "1.0", changefreq: "hourly" },
     { path: "/feed", priority: "0.9", changefreq: "always" },

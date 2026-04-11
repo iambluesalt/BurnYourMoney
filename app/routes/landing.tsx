@@ -11,10 +11,13 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { getRecentEvents, getTopSingleBurns, getPlatformStats, getWasteOverTimePeriod } from "~/lib/queries.server";
+import {
+  wasteEvents,
+  wasteOverTimeData,
+  getPlatformStats,
+  getTopSingleBurns,
+} from "~/lib/dummy-data";
 import { formatCurrency, formatCompactCurrency, formatBigCounter, timeAgo, getMoneyType } from "~/lib/utils";
-import { useLiveData } from "~/lib/use-live-data";
-import type { Route } from "./+types/landing";
 
 function WasteTooltip({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) {
   if (!active || !payload?.length) return null;
@@ -30,33 +33,25 @@ function WasteTooltip({ active, payload, label }: { active?: boolean; payload?: 
 
 export function meta() {
   return [
-    { title: "WasteYourMoney — Burn Real Money For No Reason" },
+    { title: "BurnYourMoney — Burn Real Money For No Reason" },
     { name: "description", content: "The internet's most honest transaction. Pay real money via Razorpay. Get absolutely nothing. Watch it burn on the public leaderboard." },
-    { property: "og:title", content: "WasteYourMoney — Burn Real Money For No Reason" },
+    { property: "og:title", content: "BurnYourMoney — Burn Real Money For No Reason" },
     { property: "og:description", content: "Pay real money. Get absolutely nothing. Climb the leaderboard." },
     { property: "og:type", content: "website" },
-    { property: "og:site_name", content: "WasteYourMoney" },
+    { property: "og:site_name", content: "BurnYourMoney" },
     { name: "twitter:card", content: "summary_large_image" },
-    { name: "twitter:title", content: "WasteYourMoney — Burn Real Money For No Reason" },
+    { name: "twitter:title", content: "BurnYourMoney — Burn Real Money For No Reason" },
     { name: "twitter:description", content: "Pay real money. Get absolutely nothing. Climb the leaderboard." },
   ];
 }
 
-export function loader() {
-  return {
-    stats: getPlatformStats(),
-    recentEvents: getRecentEvents(8),
-    topWastes: getTopSingleBurns(3),
-    chartData: getWasteOverTimePeriod("30d"),
-  };
-}
+const stats = getPlatformStats();
+const recentEvents = wasteEvents.slice(0, 8);
+const topWastes = getTopSingleBurns(3);
+const chartData = wasteOverTimeData;
 
-export default function Landing({ loaderData }: Route.ComponentProps) {
-  const { stats: initialStats, recentEvents, topWastes, chartData } = loaderData;
-  const { stats, newEvents } = useLiveData(initialStats);
+export default function Landing() {
   const [selectedBurn, setSelectedBurn] = useState<BurnDetail | null>(null);
-
-  const tickerEvents = [...newEvents, ...recentEvents].slice(0, 16);
 
   // Podium order: 2nd place left, 1st place center, 3rd place right
   const podiumOrder = [topWastes[1], topWastes[0], topWastes[2]].filter(Boolean);
@@ -75,6 +70,7 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
             <Link to="/feed" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Live Feed</Link>
             <Link to="/leaderboard" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Leaderboard</Link>
             <Link to="/analytics" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Analytics</Link>
+            <Link to="/my-burns" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">My Burns</Link>
             <Link
               to="/burn"
               className="ml-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-sm font-bold text-background hover:bg-primary-hover transition-all hover:shadow-lg hover:shadow-primary-glow"
@@ -194,10 +190,10 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
       <div className="border-b border-border bg-surface/40 overflow-hidden">
         <div className="ticker-mask flex overflow-hidden py-3">
           <div className="flex animate-ticker gap-8 whitespace-nowrap">
-            {[...tickerEvents, ...tickerEvents].map((event, i) => {
+            {[...recentEvents, ...recentEvents].map((event, i) => {
               const tier = getMoneyType(event.amount);
               return (
-                <span key={i} className="flex items-center gap-2 text-sm text-text-muted">
+                <span key={`${i}-${event.id}`} className="flex items-center gap-2 text-sm text-text-muted">
                   <span className="text-base">{tier.icon}</span>
                   <span className="font-semibold text-text">{event.nickname ?? "Anonymous"}</span>
                   <span className="text-text-dim">just {tier.verb}</span>
@@ -279,7 +275,6 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
       <section className="border-t border-border bg-surface/20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-            {/* Left: headline */}
             <div>
               <div className="text-xs font-bold text-primary uppercase tracking-widest mb-4">The Philosophy</div>
               <h2 className="font-[family-name:var(--font-display)] text-4xl sm:text-5xl font-extrabold leading-tight mb-6">
@@ -301,29 +296,13 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
               </Link>
             </div>
 
-            {/* Right: bullet list */}
             <div className="space-y-4">
               {[
-                {
-                  title: "No refunds. Ever.",
-                  desc: "You knew what you were doing. We respect that.",
-                },
-                {
-                  title: "No products. No services.",
-                  desc: "We are not a store. Nothing is for sale. Nothing will arrive.",
-                },
-                {
-                  title: "No dark patterns.",
-                  desc: "The checkout process is depressingly straightforward.",
-                },
-                {
-                  title: "100% transparent waste.",
-                  desc: "Every burn is public. The leaderboard is real. The shame is optional.",
-                },
-                {
-                  title: "Your money, your call.",
-                  desc: "Adults wasting their own money, watched by the internet. Peak entertainment.",
-                },
+                { title: "No refunds. Ever.",       desc: "You knew what you were doing. We respect that." },
+                { title: "No products. No services.", desc: "We are not a store. Nothing is for sale. Nothing will arrive." },
+                { title: "No dark patterns.",        desc: "The checkout process is depressingly straightforward." },
+                { title: "100% transparent waste.",  desc: "Every burn is public. The leaderboard is real. The shame is optional." },
+                { title: "Your money, your call.",   desc: "Adults wasting their own money, watched by the internet. Peak entertainment." },
               ].map((item) => (
                 <div key={item.title} className="flex items-start gap-4 rounded-xl border border-border bg-surface p-4">
                   <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
@@ -341,42 +320,31 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
       {/* ─── RECENT BURNS + CHART ─── */}
       <section className="border-t border-border bg-surface/20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-20 sm:py-28">
-          {/* Header row */}
           <div className="flex items-end justify-between mb-10">
             <div>
               <h2 className="font-[family-name:var(--font-display)] text-4xl sm:text-5xl font-bold mb-2">
                 Live <span className="fire-glow">Activity</span>
               </h2>
-              <p className="text-text-muted">Recent burns and 30-day trend.</p>
+              <p className="text-text-muted">Recent burns and trend.</p>
             </div>
             <div className="hidden sm:flex items-center gap-5">
-              <Link
-                to="/feed"
-                className="flex items-center gap-1.5 text-sm font-semibold text-text-muted hover:text-text transition-colors"
-              >
-                All burns
-                <ArrowRight className="h-3.5 w-3.5" />
+              <Link to="/feed" className="flex items-center gap-1.5 text-sm font-semibold text-text-muted hover:text-text transition-colors">
+                All burns <ArrowRight className="h-3.5 w-3.5" />
               </Link>
-              <Link
-                to="/analytics"
-                className="flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-primary-hover transition-colors"
-              >
-                Full analytics
-                <ArrowRight className="h-3.5 w-3.5" />
+              <Link to="/analytics" className="flex items-center gap-1.5 text-sm font-semibold text-primary hover:text-primary-hover transition-colors">
+                Full analytics <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </div>
           </div>
 
-          {/* Cards above, chart below */}
           <div className="flex flex-col gap-6">
-            {/* Top: 4-card row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {recentEvents.slice(0, 4).map((event) => {
                 const tier = getMoneyType(event.amount);
                 return (
                   <button
                     key={event.id}
-                    onClick={() => setSelectedBurn(event)}
+                    onClick={() => setSelectedBurn({ amount: event.amount, method: event.method, nickname: event.nickname, message: event.message, createdAt: event.createdAt })}
                     className="relative overflow-hidden rounded-xl border border-border bg-surface p-5 card-ember group text-left cursor-pointer hover:border-primary/30 transition-colors"
                   >
                     <div className="flex justify-start mb-3">
@@ -399,10 +367,9 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
               })}
             </div>
 
-            {/* Bottom: area chart */}
             <div className="rounded-2xl border border-border bg-surface p-4 sm:p-6">
               <div className="text-xs font-bold text-text-dim uppercase tracking-widest mb-4">
-                Daily waste — last 30 days
+                Monthly waste trend
               </div>
               <ResponsiveContainer width="100%" height={260}>
                 <AreaChart data={chartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -413,30 +380,10 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="#2A2A27" strokeDasharray="4 4" />
-                  <XAxis
-                    dataKey="label"
-                    tick={{ fill: "#6B6760", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval={5}
-                  />
-                  <YAxis
-                    tick={{ fill: "#6B6760", fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v: number) => formatCompactCurrency(v)}
-                    width={56}
-                  />
+                  <XAxis dataKey="label" tick={{ fill: "#6B6760", fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: "#6B6760", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => formatCompactCurrency(v)} width={56} />
                   <Tooltip content={<WasteTooltip />} cursor={{ stroke: "#2A2A27", strokeWidth: 1 }} />
-                  <Area
-                    type="monotone"
-                    dataKey="amount"
-                    stroke="#FF6B35"
-                    strokeWidth={2}
-                    fill="url(#burnGradient)"
-                    dot={false}
-                    activeDot={{ r: 4, fill: "#FF6B35", strokeWidth: 0 }}
-                  />
+                  <Area type="monotone" dataKey="amount" stroke="#FF6B35" strokeWidth={2} fill="url(#burnGradient)" dot={false} activeDot={{ r: 4, fill: "#FF6B35", strokeWidth: 0 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -456,7 +403,6 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
             </p>
           </div>
 
-          {/* Podium: 2nd | 1st | 3rd */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {podiumOrder.map((waste) => {
               if (!waste) return null;
@@ -477,36 +423,19 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
                   className="relative rounded-2xl border p-6 overflow-hidden text-left card-ember hover:brightness-110 transition-all cursor-pointer"
                   style={{ borderColor: `${medal.border}50`, backgroundColor: medal.bg }}
                 >
-                  {/* Medal badge */}
-                  <div
-                    className="absolute top-4 right-4 text-xs font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full"
-                    style={{ color: medal.badge, backgroundColor: `${medal.badge}15` }}
-                  >
+                  <div className="absolute top-4 right-4 text-xs font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full" style={{ color: medal.badge, backgroundColor: `${medal.badge}15` }}>
                     #{waste.rank}
                   </div>
-
-                  {/* Amount */}
-                  <div
-                    className={`font-[family-name:var(--font-display)] text-3xl font-extrabold mb-1 ${isFirst ? "fire-glow-intense" : "fire-glow"}`}
-                  >
+                  <div className={`font-[family-name:var(--font-display)] text-3xl font-extrabold mb-1 ${isFirst ? "fire-glow-intense" : "fire-glow"}`}>
                     {formatCurrency(waste.amount)}
                   </div>
-
-                  {/* Who */}
                   <div className="text-sm text-text-muted">
                     {tier.verb} by{" "}
-                    <span className="font-semibold text-text">
-                      {waste.nickname ?? "Anonymous"}
-                    </span>
+                    <span className="font-semibold text-text">{waste.nickname ?? "Anonymous"}</span>
                   </div>
                   <div className="text-xs text-text-dim mt-1">{waste.when}</div>
-
-                  {/* Gold glow on rank 1 */}
                   {isFirst && (
-                    <div
-                      className="absolute inset-0 rounded-2xl pointer-events-none"
-                      style={{ boxShadow: `inset 0 0 40px ${medal.badge}10` }}
-                    />
+                    <div className="absolute inset-0 rounded-2xl pointer-events-none" style={{ boxShadow: `inset 0 0 40px ${medal.badge}10` }} />
                   )}
                   <span className="absolute -bottom-5 -right-4 text-[90px] opacity-[0.12] pointer-events-none select-none transition-transform duration-300 group-hover:scale-110 group-hover:opacity-[0.2] -rotate-12" aria-hidden="true">
                     {tier.icon}
@@ -517,10 +446,7 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
           </div>
 
           <div className="text-center mt-12">
-            <Link
-              to="/leaderboard"
-              className="inline-flex items-center gap-2 font-semibold text-text-muted hover:text-text transition-all"
-            >
+            <Link to="/leaderboard" className="inline-flex items-center gap-2 font-semibold text-text-muted hover:text-text transition-all">
               View Full Leaderboard
               <ArrowRight className="h-4 w-4" />
             </Link>
@@ -564,6 +490,7 @@ export default function Landing({ loaderData }: Route.ComponentProps) {
               <Link to="/feed" className="hover:text-text transition-colors">Feed</Link>
               <Link to="/leaderboard" className="hover:text-text transition-colors">Leaderboard</Link>
               <Link to="/analytics" className="hover:text-text transition-colors">Analytics</Link>
+              <Link to="/terms" className="hover:text-text transition-colors">Terms</Link>
             </div>
             <p className="text-xs text-text-dim">
               &copy; {new Date().getFullYear()} — No refunds. No ragrets.

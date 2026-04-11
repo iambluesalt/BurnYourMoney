@@ -1,19 +1,16 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Link, useFetcher, useNavigate } from "react-router";
-import { Flame, ArrowLeft, Sparkles, Skull, AlertTriangle } from "lucide-react";
+import { useState, useCallback } from "react";
+import { Link, useNavigate } from "react-router";
+import { Flame, ArrowLeft, Sparkles, Skull, AlertTriangle, X } from "lucide-react";
 import { MONEY_TYPES, getMoneyType, getMoneyTypeKey, cn, formatINR } from "~/lib/utils";
-import { razorpay, RAZORPAY_KEY_ID } from "~/lib/razorpay.server";
-import { checkRateLimit } from "~/lib/rate-limit.server";
-import type { Route } from "./+types/burn";
 
 export function meta() {
   return [
-    { title: "Burn Your Money — WasteYourMoney" },
+    { title: "Burn Your Money — BurnYourMoney" },
     { name: "description", content: "Choose your amount and burn real money into the void. No refunds." },
-    { property: "og:title", content: "Burn Your Money — WasteYourMoney" },
+    { property: "og:title", content: "Burn Your Money — BurnYourMoney" },
     { property: "og:description", content: "Choose your amount and burn real money into the void." },
     { property: "og:type", content: "website" },
-    { property: "og:site_name", content: "WasteYourMoney" },
+    { property: "og:site_name", content: "BurnYourMoney" },
     { name: "twitter:card", content: "summary" },
   ];
 }
@@ -22,66 +19,7 @@ const PRESET_AMOUNTS = [10, 50, 100, 500, 1000, 5000];
 const MIN_AMOUNT = 1;
 const MAX_AMOUNT = 999999;
 
-export async function loader() {
-  return { razorpayKeyId: RAZORPAY_KEY_ID };
-}
-
-export async function action({ request }: Route.ActionArgs) {
-  const formData = await request.formData();
-  const amount = Number(formData.get("amount"));
-  const nickname = (formData.get("nickname") as string)?.trim() || null;
-  const message = (formData.get("message") as string)?.trim() || null;
-
-  // Validate
-  if (!amount || amount < MIN_AMOUNT || amount > MAX_AMOUNT) {
-    return { error: "Amount must be between ₹1 and ₹9,99,999" };
-  }
-
-  // Rate limit
-  const ip =
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown";
-  const rateLimit = checkRateLimit(ip);
-  if (!rateLimit.allowed) {
-    return {
-      error: `Slow down, pyromaniac. Try again in ${Math.ceil(rateLimit.resetIn / 60)} minutes.`,
-    };
-  }
-
-  // Create Razorpay order
-  try {
-    const order = await razorpay.orders.create({
-      amount: Math.round(amount * 100), // Convert to paise
-      currency: "INR",
-      receipt: `waste_${Date.now()}`,
-      notes: {
-        moneyType: getMoneyTypeKey(amount),
-        nickname: nickname || "",
-        message: message || "",
-      },
-    });
-
-    return {
-      orderId: order.id,
-      amount: order.amount,
-      currency: order.currency,
-    };
-  } catch (e) {
-    console.error("Razorpay order creation failed:", e);
-    return { error: "Payment setup failed. Try again." };
-  }
-}
-
-declare global {
-  interface Window {
-    Razorpay: any;
-  }
-}
-
-export default function Burn({ loaderData }: Route.ComponentProps) {
-  const { razorpayKeyId } = loaderData;
-  const fetcher = useFetcher<typeof action>();
+export default function Burn() {
   const navigate = useNavigate();
 
   const [amount, setAmount] = useState<number>(100);
@@ -89,104 +27,30 @@ export default function Burn({ loaderData }: Route.ComponentProps) {
   const [isCustom, setIsCustom] = useState(false);
   const [nickname, setNickname] = useState("");
   const [message, setMessage] = useState("");
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const scriptLoaded = useRef(false);
-
-  // Load Razorpay script
-  useEffect(() => {
-    if (scriptLoaded.current) return;
-    if (document.querySelector('script[src*="razorpay"]')) {
-      scriptLoaded.current = true;
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = "https://checkout.razorpay.com/v1/checkout.js";
-    script.async = true;
-    script.onload = () => {
-      scriptLoaded.current = true;
-    };
-    document.head.appendChild(script);
-  }, []);
-
-  // Handle order created → open Razorpay checkout
-  useEffect(() => {
-    const data = fetcher.data;
-    if (!data || "error" in data || !("orderId" in data)) return;
-    if (checkoutOpen) return;
-
-    setCheckoutOpen(true);
-
-    const options = {
-      key: razorpayKeyId,
-      amount: data.amount,
-      currency: data.currency,
-      order_id: data.orderId,
-      name: "WasteYourMoney",
-      description: `${getMoneyType(amount).icon} Burning ${formatINR(amount)}`,
-      theme: {
-        color: "#FF6B35",
-        backdrop_color: "rgba(10,10,8,0.85)",
-      },
-      handler: async (response: {
-        razorpay_payment_id: string;
-        razorpay_order_id: string;
-        razorpay_signature: string;
-      }) => {
-        // Verify payment server-side
-        try {
-          const res = await fetch("/burn/verify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_signature: response.razorpay_signature,
-            }),
-          });
-          const result = await res.json();
-          if (result.success) {
-            navigate(`/burn/success?id=${result.eventId}`);
-          } else {
-            navigate("/burn/cancel?reason=verification_failed");
-          }
-        } catch {
-          navigate("/burn/cancel?reason=verification_failed");
-        }
-      },
-      modal: {
-        ondismiss: () => {
-          setCheckoutOpen(false);
-          navigate("/burn/cancel?reason=dismissed");
-        },
-        escape: true,
-        confirm_close: true,
-      },
-      prefill: {
-        name: nickname || "Anonymous Waster",
-      },
-    };
-
-    const rzp = new window.Razorpay(options);
-    rzp.on("payment.failed", () => {
-      setCheckoutOpen(false);
-      navigate("/burn/cancel?reason=payment_failed");
-    });
-    rzp.open();
-  }, [fetcher.data]);
+  const [warningOpen, setWarningOpen] = useState(false);
+  const [understood, setUnderstood] = useState(false);
 
   const effectiveAmount = isCustom ? Number(customAmount) || 0 : amount;
-  const isSubmitting = fetcher.state !== "idle";
-  const error = fetcher.data && "error" in fetcher.data ? fetcher.data.error : null;
   const moneyTypeInfo = getMoneyType(effectiveAmount);
 
   const handleSubmit = useCallback(() => {
     if (effectiveAmount < MIN_AMOUNT || effectiveAmount > MAX_AMOUNT) return;
-    const formData = new FormData();
-    formData.set("amount", String(effectiveAmount));
-    formData.set("nickname", nickname);
-    formData.set("message", message);
-    fetcher.submit(formData, { method: "post" });
-  }, [effectiveAmount, nickname, message, fetcher]);
+    setUnderstood(false);
+    setWarningOpen(true);
+  }, [effectiveAmount]);
+
+  const handleConfirm = useCallback(() => {
+    setWarningOpen(false);
+    const id = `burn_${Date.now()}`;
+    const params = new URLSearchParams({
+      id,
+      amount: String(effectiveAmount),
+      nickname: nickname.trim(),
+      message: message.trim(),
+      method: getMoneyTypeKey(effectiveAmount),
+    });
+    navigate(`/burn/success?${params.toString()}`);
+  }, [effectiveAmount, nickname, message, navigate]);
 
   return (
     <div className="min-h-screen">
@@ -273,7 +137,7 @@ export default function Burn({ loaderData }: Route.ComponentProps) {
           )}
         </section>
 
-        {/* ─── MONEY TYPE (auto-derived from amount) ─── */}
+        {/* ─── MONEY TYPE ─── */}
         <section>
           <label className="block text-xs font-bold text-text-dim uppercase tracking-widest mb-4">
             Your money type
@@ -340,14 +204,6 @@ export default function Burn({ loaderData }: Route.ComponentProps) {
           </div>
         </section>
 
-        {/* ─── ERROR ─── */}
-        {error && (
-          <div className="rounded-xl border border-danger/30 bg-danger/5 p-4 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-danger flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-danger">{error}</p>
-          </div>
-        )}
-
         {/* ─── SUMMARY + CTA ─── */}
         <div className="rounded-2xl border border-border bg-surface p-6">
           <div className="flex items-center justify-between mb-6">
@@ -369,47 +225,123 @@ export default function Burn({ loaderData }: Route.ComponentProps) {
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={
-              isSubmitting ||
-              effectiveAmount < MIN_AMOUNT ||
-              effectiveAmount > MAX_AMOUNT ||
-              checkoutOpen
-            }
+            disabled={effectiveAmount < MIN_AMOUNT || effectiveAmount > MAX_AMOUNT}
             className={cn(
               "w-full flex items-center justify-center gap-3 rounded-2xl py-4 text-lg font-extrabold transition-all",
-              isSubmitting || checkoutOpen
-                ? "bg-primary/50 text-background/50 cursor-wait"
-                : effectiveAmount < MIN_AMOUNT
-                  ? "bg-surface-hover text-text-dim cursor-not-allowed border border-border"
-                  : "bg-primary text-background hover:bg-primary-hover hover:shadow-xl hover:shadow-primary-glow active:scale-[0.98]"
+              effectiveAmount < MIN_AMOUNT || effectiveAmount > MAX_AMOUNT
+                ? "bg-surface-hover text-text-dim cursor-not-allowed border border-border"
+                : "bg-primary text-background hover:bg-primary-hover hover:shadow-xl hover:shadow-primary-glow active:scale-[0.98]"
             )}
           >
-            {isSubmitting ? (
-              <>
-                <Sparkles className="h-5 w-5 animate-pulse" />
-                Setting fire...
-              </>
-            ) : checkoutOpen ? (
-              <>
-                <Sparkles className="h-5 w-5 animate-pulse" />
-                Complete payment...
-              </>
-            ) : (
-              <>
-                <Flame className="h-5 w-5" />
-                {effectiveAmount >= MIN_AMOUNT
-                  ? `Burn ${formatINR(effectiveAmount)} Now`
-                  : "Enter an amount"}
-              </>
-            )}
+            <Flame className="h-5 w-5" />
+            {effectiveAmount >= MIN_AMOUNT
+              ? `Burn ${formatINR(effectiveAmount)} Now`
+              : "Enter an amount"}
           </button>
 
           <p className="text-center text-text-dim text-xs mt-4 flex items-center justify-center gap-1.5">
             <Skull className="h-3 w-3" />
-            No refunds. Processed via Razorpay.
+            No refunds. Demo mode — no real payment.
+          </p>
+          <p className="text-center text-text-dim/60 text-xs mt-2">
+            By burning you agree to our{" "}
+            <Link to="/terms" className="underline underline-offset-2 hover:text-text-dim transition-colors">
+              Terms & Conditions
+            </Link>
           </p>
         </div>
       </div>
+
+      {/* ─── WARNING MODAL ─── */}
+      {warningOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            onClick={() => setWarningOpen(false)}
+          />
+
+          <div className="relative w-full max-w-md rounded-2xl border border-danger/40 bg-surface shadow-2xl shadow-danger/10 p-8">
+            <button
+              onClick={() => setWarningOpen(false)}
+              className="absolute top-4 right-4 text-text-dim hover:text-text transition-colors"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-danger/10 border border-danger/20 mb-6 mx-auto">
+              <AlertTriangle className="h-7 w-7 text-danger" />
+            </div>
+
+            <h2 className="font-[family-name:var(--font-display)] text-2xl font-extrabold text-center mb-2">
+              Wait — are you sure?
+            </h2>
+            <p className="text-text-muted text-sm text-center mb-6">
+              You are about to burn{" "}
+              <span className="font-bold fire-glow">{formatINR(effectiveAmount)}</span>{" "}
+              into the void. This is a demo burn. No real money is charged.
+            </p>
+
+            <div className="rounded-xl border border-border bg-background/50 p-4 space-y-3 mb-6 text-sm text-text-muted">
+              <div className="flex items-start gap-2.5">
+                <span className="text-danger mt-0.5">✗</span>
+                <span>There are <strong className="text-text">no refunds</strong>, no exceptions, no appeals.</span>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <span className="text-danger mt-0.5">✗</span>
+                <span>You receive <strong className="text-text">nothing</strong> in return — no product, no service.</span>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <span className="text-danger mt-0.5">✗</span>
+                <span>Your burn may appear <strong className="text-text">publicly</strong> on the feed and leaderboard.</span>
+              </div>
+            </div>
+
+            <label className="flex items-start gap-3 cursor-pointer mb-6 group">
+              <div className="relative mt-0.5 flex-shrink-0">
+                <input
+                  type="checkbox"
+                  checked={understood}
+                  onChange={(e) => setUnderstood(e.target.checked)}
+                  className="sr-only"
+                />
+                <div className={cn(
+                  "h-5 w-5 rounded border-2 flex items-center justify-center transition-all",
+                  understood
+                    ? "bg-danger border-danger"
+                    : "border-border group-hover:border-danger/50"
+                )}>
+                  {understood && <span className="text-white text-xs font-bold">✓</span>}
+                </div>
+              </div>
+              <span className="text-sm text-text-muted leading-snug">
+                I understand this money is gone forever and I am doing this willingly.
+              </span>
+            </label>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setWarningOpen(false)}
+                className="flex-1 py-3 rounded-xl border border-border text-sm font-semibold text-text-muted hover:text-text hover:bg-surface-hover transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={!understood}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-extrabold transition-all",
+                  understood
+                    ? "bg-danger text-white hover:bg-danger/90 hover:shadow-lg hover:shadow-danger/20"
+                    : "bg-surface border border-border text-text-dim cursor-not-allowed"
+                )}
+              >
+                <Flame className="h-4 w-4" />
+                Burn it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

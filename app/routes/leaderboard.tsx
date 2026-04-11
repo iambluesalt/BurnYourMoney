@@ -2,40 +2,33 @@ import { useState } from "react";
 import { Trophy, Flame } from "lucide-react";
 import { Link } from "react-router";
 import { BurnDetailModal, type BurnDetail } from "~/components/burn-detail-modal";
-import { getLeaderboard, getTopSingleBurns } from "~/lib/queries.server";
+import { leaderboardAllTime, leaderboardMonthly, getTopSingleBurns } from "~/lib/dummy-data";
 import { formatCurrency, formatCompactCurrency, getMoneyType, cn } from "~/lib/utils";
-import type { Route } from "./+types/leaderboard";
 
 export function meta() {
   return [
-    { title: "Leaderboard — WasteYourMoney" },
+    { title: "Leaderboard — BurnYourMoney" },
     { name: "description", content: "Who has burned the most money? See the all-time and monthly rankings of the biggest wasters." },
-    { property: "og:title", content: "Leaderboard — WasteYourMoney" },
+    { property: "og:title", content: "Leaderboard — BurnYourMoney" },
     { property: "og:description", content: "Who has burned the most money? See the rankings." },
     { property: "og:type", content: "website" },
-    { property: "og:site_name", content: "WasteYourMoney" },
+    { property: "og:site_name", content: "BurnYourMoney" },
     { name: "twitter:card", content: "summary" },
   ];
 }
 
 type TimeFrame = "all-time" | "monthly" | "biggest";
 
-export function loader() {
-  return {
-    allTime: getLeaderboard("all-time"),
-    monthly: getLeaderboard("monthly"),
-    biggestBurns: getTopSingleBurns(10),
-  };
-}
+const biggestBurns = getTopSingleBurns(10);
 
-export default function Leaderboard({ loaderData }: Route.ComponentProps) {
+export default function Leaderboard() {
   const [timeFrame, setTimeFrame] = useState<TimeFrame>("all-time");
   const [selectedBurn, setSelectedBurn] = useState<BurnDetail | null>(null);
 
-  const entries = timeFrame === "all-time" ? loaderData.allTime : loaderData.monthly;
+  const entries = timeFrame === "all-time" ? leaderboardAllTime : leaderboardMonthly;
   const totalWasted = timeFrame !== "biggest"
     ? entries.reduce((sum, e) => sum + e.totalWasted, 0)
-    : loaderData.biggestBurns.reduce((sum, b) => sum + b.amount, 0);
+    : biggestBurns.reduce((sum, b) => sum + b.amount, 0);
 
   return (
     <div className="min-h-screen">
@@ -50,6 +43,7 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
           <div className="flex items-center gap-1">
             <Link to="/feed" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Live Feed</Link>
             <Link to="/analytics" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Analytics</Link>
+            <Link to="/my-burns" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">My Burns</Link>
             <Link
               to="/burn"
               className="ml-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-sm font-bold text-background hover:bg-primary-hover transition-all hover:shadow-lg hover:shadow-primary-glow"
@@ -110,8 +104,8 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
         {timeFrame === "biggest" ? (
           <>
             {/* ─── BIGGEST BURNS ─── */}
-            {loaderData.biggestBurns[0] && (() => {
-              const biggest = loaderData.biggestBurns[0];
+            {biggestBurns[0] && (() => {
+              const biggest = biggestBurns[0];
               const tier = getMoneyType(biggest.amount);
               return (
                 <button
@@ -144,7 +138,7 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
             })()}
 
             <div className="space-y-4">
-              {loaderData.biggestBurns.slice(1).map((waste) => {
+              {biggestBurns.slice(1).map((waste) => {
                 const tier = getMoneyType(waste.amount);
                 return (
                   <button
@@ -192,7 +186,6 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
               {entries.slice(0, 3).map((entry, idx) => {
                 const tier = getMoneyType(entry.totalWasted);
                 const medals = ["🥇", "🥈", "🥉"];
-                const podiumColors = ["#FFB800", "#9CA3AF", "#CD7F32"];
                 return (
                   <div
                     key={entry.nickname}
@@ -203,45 +196,36 @@ export default function Leaderboard({ loaderData }: Route.ComponentProps) {
                         : "border-border bg-surface"
                     )}
                   >
-                    <div
-                      className="absolute top-4 right-4 text-2xl"
-                      style={{ filter: idx === 0 ? "drop-shadow(0 0 8px #FFB80060)" : "none" }}
-                    >
-                      {medals[idx]}
-                    </div>
                     <div className="flex items-start gap-4">
-                      <div
-                        className="flex h-14 w-14 items-center justify-center rounded-xl text-2xl flex-shrink-0"
-                        style={{
-                          backgroundColor: `${podiumColors[idx]}15`,
-                          border: `1px solid ${podiumColors[idx]}30`,
-                        }}
-                      >
-                        {entry.nickname[0].toUpperCase()}
-                      </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs text-text-dim mb-0.5">
-                          #{idx + 1} · {entry.wasteCount} burns
-                        </div>
-                        <div className="font-[family-name:var(--font-display)] text-xl font-extrabold truncate">
+                        <div className="font-[family-name:var(--font-display)] text-3xl font-extrabold truncate">
                           {entry.nickname}
                         </div>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className="text-sm">{tier.icon}</span>
+                        <div className="flex items-center gap-2 mt-1">
                           <span className="text-xs text-text-muted">
                             {entry.wasteCount} waste events
                           </span>
                         </div>
                       </div>
                     </div>
-                    <div className="mt-4 pt-4 border-t border-border/50">
+                    <div className="mt-4 pt-4">
                       <div className="font-[family-name:var(--font-display)] text-2xl font-extrabold fire-glow">
                         {formatCurrency(entry.totalWasted)}
                       </div>
                       <div className="text-xs text-text-dim mt-0.5">total burned</div>
                     </div>
-                    <span className="absolute -bottom-5 -right-4 text-[90px] opacity-[0.12] pointer-events-none select-none -rotate-12" aria-hidden="true">
-                      {tier.icon}
+                    <span
+                      className="absolute -bottom-5 -right-4 text-[90px] opacity-[0.30] pointer-events-none select-none -rotate-12"
+                      style={{
+                        filter: idx === 0
+                          ? "drop-shadow(0 0 16px #FFB800) drop-shadow(0 0 32px #FFB80080)"
+                          : idx === 1
+                          ? "drop-shadow(0 0 12px #9CA3AF) drop-shadow(0 0 24px #9CA3AF60)"
+                          : "drop-shadow(0 0 12px #CD7F32) drop-shadow(0 0 24px #CD7F3260)",
+                      }}
+                      aria-hidden="true"
+                    >
+                      {medals[idx]}
                     </span>
                   </div>
                 );

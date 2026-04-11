@@ -2,23 +2,31 @@ import { Link } from "react-router";
 import { Flame, ArrowRight, Receipt, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { formatINR, timeAgo, getMoneyType } from "~/lib/utils";
-import type { WasteEventRow } from "~/lib/queries.server";
 import type { Route } from "./+types/my-burns";
+
+interface LocalBurnEvent {
+  id: string;
+  amount: number;
+  nickname: string | null;
+  message: string | null;
+  method: string;
+  createdAt: string;
+}
 
 export function meta() {
   return [
-    { title: "My Burns — WasteYourMoney" },
+    { title: "My Burns — BurnYourMoney" },
     { name: "description", content: "Your personal burn history, stored locally." },
   ];
 }
 
-export async function clientLoader(): Promise<{ events: WasteEventRow[] }> {
-  const ids: number[] = JSON.parse(localStorage.getItem("wym_burns") || "[]");
-  if (ids.length === 0) return { events: [] };
-
-  const res = await fetch(`/api/events?ids=${ids.join(",")}`);
-  const data = await res.json();
-  return data as { events: WasteEventRow[] };
+export async function clientLoader(): Promise<{ events: LocalBurnEvent[] }> {
+  try {
+    const stored: LocalBurnEvent[] = JSON.parse(localStorage.getItem("bym_events") || "[]");
+    return { events: stored };
+  } catch {
+    return { events: [] };
+  }
 }
 clientLoader.hydrate = true as const;
 
@@ -31,11 +39,11 @@ export function HydrateFallback() {
 }
 
 export default function MyBurns({ loaderData }: Route.ComponentProps) {
-  const { events } = loaderData as { events: WasteEventRow[] };
+  const { events } = loaderData as { events: LocalBurnEvent[] };
   const [cleared, setCleared] = useState(false);
 
   function handleClear() {
-    localStorage.removeItem("wym_burns");
+    localStorage.removeItem("bym_events");
     setCleared(true);
   }
 
@@ -88,7 +96,6 @@ export default function MyBurns({ loaderData }: Route.ComponentProps) {
         </div>
 
         {displayEvents.length === 0 ? (
-          /* Empty state */
           <div className="rounded-2xl border border-border bg-surface p-12 text-center">
             <div className="text-5xl mb-4">🕳️</div>
             <h2 className="font-[family-name:var(--font-display)] text-xl font-bold mb-2">
@@ -118,7 +125,6 @@ export default function MyBurns({ loaderData }: Route.ComponentProps) {
                   to={`/burn/receipt/${event.id}`}
                   className="flex items-center gap-4 rounded-2xl border border-border bg-surface px-5 py-4 hover:bg-surface-hover hover:border-border-hover transition-all group"
                 >
-                  {/* Method icon */}
                   <div
                     className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl text-xl"
                     style={{ backgroundColor: `${method.color}15` }}
@@ -126,16 +132,12 @@ export default function MyBurns({ loaderData }: Route.ComponentProps) {
                     {method.icon}
                   </div>
 
-                  {/* Details */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2">
                       <span className="font-[family-name:var(--font-display)] text-lg font-extrabold fire-glow-intense">
                         {formatINR(event.amount)}
                       </span>
-                      <span
-                        className="text-xs font-semibold"
-                        style={{ color: method.color }}
-                      >
+                      <span className="text-xs font-semibold" style={{ color: method.color }}>
                         {method.verb}
                       </span>
                     </div>
@@ -151,7 +153,6 @@ export default function MyBurns({ loaderData }: Route.ComponentProps) {
                     </div>
                   </div>
 
-                  {/* Time + receipt link */}
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <span className="text-xs text-text-dim">
                       {timeAgo(new Date(event.createdAt))}
@@ -167,10 +168,9 @@ export default function MyBurns({ loaderData }: Route.ComponentProps) {
           </div>
         )}
 
-        {/* Footer note */}
         {displayEvents.length > 0 && (
           <p className="text-center text-xs text-text-dim mt-8">
-            Receipts are permanent links — bookmark them if you clear this history.
+            Receipts are saved on this device only — bookmark them if you clear this history.
           </p>
         )}
       </div>

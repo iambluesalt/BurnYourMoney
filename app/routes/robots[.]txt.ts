@@ -2,7 +2,7 @@ export function loader() {
   const content = `User-agent: *
 Allow: /
 
-Sitemap: https://wasteyourmoney.com/sitemap.xml
+Sitemap: https://burnyourmoney.com/sitemap.xml
 `;
 
   return new Response(content, {

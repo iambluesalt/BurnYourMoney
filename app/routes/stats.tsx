@@ -18,22 +18,21 @@ import {
 } from "recharts";
 import {
   getPlatformStats,
-  getWasteOverTimePeriod,
-  getWasteByMoneyType,
-  getWasteByAmountTier,
-  getWasteByDayOfWeek,
-} from "~/lib/queries.server";
+  wasteOverTimeData,
+  wasteByMethodData,
+  wasteByAmountTierData,
+  wasteByDayOfWeekData,
+} from "~/lib/dummy-data";
 import { formatCompactCurrency, cn } from "~/lib/utils";
-import type { Route } from "./+types/stats";
 
 export function meta() {
   return [
-    { title: "Analytics — WasteYourMoney" },
+    { title: "Analytics — BurnYourMoney" },
     { name: "description", content: "Every cent the world has burned, visualized. Charts, trends, and breakdowns of global money waste." },
-    { property: "og:title", content: "Analytics — WasteYourMoney" },
+    { property: "og:title", content: "Analytics — BurnYourMoney" },
     { property: "og:description", content: "Every cent the world has burned, visualized." },
     { property: "og:type", content: "website" },
-    { property: "og:site_name", content: "WasteYourMoney" },
+    { property: "og:site_name", content: "BurnYourMoney" },
     { name: "twitter:card", content: "summary" },
   ];
 }
@@ -50,32 +49,10 @@ const chartTooltipStyle = {
   labelStyle: { color: "#9C978E" },
 };
 
-export function loader() {
-  return {
-    stats: getPlatformStats(),
-    wasteOverTime7d: getWasteOverTimePeriod("7d"),
-    wasteOverTime30d: getWasteOverTimePeriod("30d"),
-    wasteOverTime3m: getWasteOverTimePeriod("3m"),
-    wasteOverTimeAll: getWasteOverTimePeriod("all"),
-    wasteByMethodData: getWasteByMoneyType(),
-    wasteByAmountTierData: getWasteByAmountTier(),
-    wasteByDayOfWeekData: getWasteByDayOfWeek(),
-  };
-}
+const stats = getPlatformStats();
 
-type Period = "7d" | "30d" | "3m" | "all";
-
-export default function Stats({ loaderData }: Route.ComponentProps) {
-  const { stats, wasteOverTime7d, wasteOverTime30d, wasteOverTime3m, wasteOverTimeAll, wasteByMethodData, wasteByAmountTierData, wasteByDayOfWeekData } = loaderData;
-  const [period, setPeriod] = useState<Period>("30d");
-
-  const periodData = {
-    "7d": wasteOverTime7d,
-    "30d": wasteOverTime30d,
-    "3m": wasteOverTime3m,
-    "all": wasteOverTimeAll,
-  };
-  const wasteOverTimeData = periodData[period];
+export default function Stats() {
+  const [period, setPeriod] = useState<"7d" | "30d" | "3m" | "all">("30d");
 
   return (
     <div className="min-h-screen">
@@ -90,6 +67,7 @@ export default function Stats({ loaderData }: Route.ComponentProps) {
           <div className="flex items-center gap-1">
             <Link to="/feed" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Live Feed</Link>
             <Link to="/leaderboard" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Leaderboard</Link>
+            <Link to="/my-burns" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">My Burns</Link>
             <Link
               to="/burn"
               className="ml-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-sm font-bold text-background hover:bg-primary-hover transition-all hover:shadow-lg hover:shadow-primary-glow"
@@ -182,12 +160,7 @@ export default function Stats({ loaderData }: Route.ComponentProps) {
               ))}
             </div>
           </div>
-          <p className="text-xs text-text-dim mb-6">
-            {period === "7d" ? "Daily totals — last 7 days" :
-             period === "30d" ? "Daily totals — last 30 days" :
-             period === "3m" ? "Weekly totals — last 3 months" :
-             "Monthly totals — all time"}
-          </p>
+          <p className="text-xs text-text-dim mb-6">Monthly totals — demo data</p>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={wasteOverTimeData}>
@@ -197,7 +170,6 @@ export default function Stats({ loaderData }: Route.ComponentProps) {
                   stroke="#6B6760"
                   fontSize={11}
                   tickLine={false}
-                  interval={period === "7d" ? 0 : period === "30d" ? 4 : "preserveStartEnd"}
                 />
                 <YAxis
                   stroke="#6B6760"
@@ -217,7 +189,7 @@ export default function Stats({ loaderData }: Route.ComponentProps) {
                   dataKey="amount"
                   stroke="#FF6B35"
                   strokeWidth={3}
-                  dot={period === "7d" ? { fill: "#FF6B35", r: 5, strokeWidth: 2, stroke: "#141412" } : false}
+                  dot={{ fill: "#FF6B35", r: 5, strokeWidth: 2, stroke: "#141412" }}
                   activeDot={{
                     r: 7,
                     fill: "#FF6B35",
@@ -253,7 +225,7 @@ export default function Stats({ loaderData }: Route.ComponentProps) {
                     nameKey="type"
                     stroke="none"
                   >
-                    {wasteByMethodData.map((entry: { color: string }, index: number) => (
+                    {wasteByMethodData.map((entry, index) => (
                       <Cell key={index} fill={entry.color} />
                     ))}
                   </Pie>

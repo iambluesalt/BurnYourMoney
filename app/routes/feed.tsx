@@ -1,21 +1,18 @@
-import { useState, useEffect, useRef } from "react";
-import { Flame, Clock, ArrowUpDown, LayoutGrid, Table2, ChevronDown, Loader2 } from "lucide-react";
-import { useFetcher, Link } from "react-router";
+import { useState, useMemo } from "react";
+import { Flame, Clock, ArrowUpDown, LayoutGrid, Table2, ChevronDown } from "lucide-react";
+import { Link } from "react-router";
 import { BurnDetailModal, type BurnDetail } from "~/components/burn-detail-modal";
-import { getEventsPaginated, getPlatformStats } from "~/lib/queries.server";
-import type { WasteEventRow } from "~/lib/queries.server";
+import { wasteEvents, getPlatformStats, type WasteEvent } from "~/lib/dummy-data";
 import { formatCurrency, formatCompactCurrency, timeAgo, getMoneyType, MONEY_TYPES, type MoneyType, cn } from "~/lib/utils";
-import { useLiveData } from "~/lib/use-live-data";
-import type { Route } from "./+types/feed";
 
 export function meta() {
   return [
-    { title: "Live Waste Feed — WasteYourMoney" },
+    { title: "Live Waste Feed — BurnYourMoney" },
     { name: "description", content: "Watch money disappear in real-time. From loose change to royal fortunes — live as it happens." },
-    { property: "og:title", content: "Live Waste Feed — WasteYourMoney" },
+    { property: "og:title", content: "Live Waste Feed — BurnYourMoney" },
     { property: "og:description", content: "Watch money disappear in real-time." },
     { property: "og:type", content: "website" },
-    { property: "og:site_name", content: "WasteYourMoney" },
+    { property: "og:site_name", content: "BurnYourMoney" },
     { name: "twitter:card", content: "summary" },
   ];
 }
@@ -23,103 +20,45 @@ export function meta() {
 type SortOption = "newest" | "biggest";
 type ViewMode = "grid" | "table";
 
-export function loader({ request }: Route.LoaderArgs) {
-  const url = new URL(request.url);
-  const cursorId = url.searchParams.get("cursor")
-    ? Number(url.searchParams.get("cursor"))
-    : undefined;
-  const tier = (url.searchParams.get("tier") as MoneyType) || undefined;
-  const sort = (url.searchParams.get("sort") as SortOption) || "newest";
+const PAGE_SIZE = 24;
+const stats = getPlatformStats();
 
-  const page = getEventsPaginated({ cursorId, tier, sort });
-
-  return {
-    events: page.events,
-    nextCursor: page.nextCursor,
-    stats: getPlatformStats(),
-  };
-}
-
-export default function Feed({ loaderData }: Route.ComponentProps) {
-  const { events: loaderEvents, nextCursor: loaderNextCursor, stats: initialStats } = loaderData;
-  const { stats, newEvents, clearNewEvents } = useLiveData(initialStats);
-
+export default function Feed() {
   const [tierFilter, setTierFilter] = useState<MoneyType | "all">("all");
   const [sortBy, setSortBy] = useState<SortOption>("newest");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [shown, setShown] = useState(PAGE_SIZE);
   const [selectedBurn, setSelectedBurn] = useState<BurnDetail | null>(null);
 
-  // Single source of truth for displayed events
-  const [events, setEvents] = useState<WasteEventRow[]>(loaderEvents);
-  const [nextCursor, setNextCursor] = useState<number | null>(loaderNextCursor);
-  const seenIds = useRef(new Set(loaderEvents.map((e) => e.id)));
-  // Tracks whether the in-flight fetcher load is a full replace (filter change)
-  // or an append (load more). A ref so it's always up-to-date on the latest load.
-  const fetchAction = useRef<"replace" | "append">("replace");
-  const isFirstRender = useRef(true);
+  const filtered = useMemo(() => {
+    let result = [...wasteEvents];
 
-  const fetcher = useFetcher();
-
-  // SSE: prepend new events — skip ones that don't match the active method filter
-  useEffect(() => {
-    if (newEvents.length === 0) return;
-    const fresh = newEvents
-      .filter((e) => !seenIds.current.has(e.id))
-      .filter((e) => {
-        if (tierFilter === "all") return true;
-        const tier = MONEY_TYPES[tierFilter];
-        return e.amount >= tier.min && e.amount <= tier.max;
-      });
-    if (fresh.length === 0) {
-      clearNewEvents();
-      return;
+    if (tierFilter !== "all") {
+      const tier = MONEY_TYPES[tierFilter];
+      result = result.filter((e) => e.amount >= tier.min && e.amount <= tier.max);
     }
-    fresh.forEach((e) => seenIds.current.add(e.id));
-    setEvents((prev) => [...fresh, ...prev]);
-    clearNewEvents();
-  }, [newEvents, clearNewEvents, tierFilter]);
 
-  // Filter / sort change → replace first page from server
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
+    if (sortBy === "newest") {
+      result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } else {
+      result.sort((a, b) => b.amount - a.amount);
     }
-    fetchAction.current = "replace";
-    const params = new URLSearchParams();
-    if (tierFilter !== "all") params.set("tier", tierFilter);
-    if (sortBy !== "newest") params.set("sort", sortBy);
-    fetcher.load(`/feed?${params.toString()}`);
+
+    return result;
   }, [tierFilter, sortBy]);
 
-  // Handle fetcher data for both replace (filter change) and append (load more)
-  useEffect(() => {
-    if (!fetcher.data) return;
-    const data = fetcher.data as { events: WasteEventRow[]; nextCursor: number | null };
-    if (fetchAction.current === "replace") {
-      seenIds.current = new Set(data.events.map((e) => e.id));
-      setEvents(data.events);
-    } else {
-      const fresh = data.events.filter((e) => !seenIds.current.has(e.id));
-      fresh.forEach((e) => seenIds.current.add(e.id));
-      setEvents((prev) => [...prev, ...fresh]);
-    }
-    setNextCursor(data.nextCursor ?? null);
-  }, [fetcher.data]);
+  const events = filtered.slice(0, shown);
+  const hasMore = shown < filtered.length;
 
-  function handleLoadMore() {
-    if (!nextCursor || fetcher.state !== "idle") return;
-    fetchAction.current = "append";
-    const params = new URLSearchParams();
-    if (tierFilter !== "all") params.set("tier", tierFilter);
-    if (sortBy !== "newest") params.set("sort", sortBy);
-    params.set("cursor", String(nextCursor));
-    fetcher.load(`/feed?${params.toString()}`);
+  function handleFilterChange(f: MoneyType | "all") {
+    setTierFilter(f);
+    setShown(PAGE_SIZE);
   }
 
-  // Show full-area spinner only when replacing (filter/sort change), not on append
-  const isReplacing = fetcher.state !== "idle" && fetchAction.current === "replace";
-  const isAppending = fetcher.state !== "idle" && fetchAction.current === "append";
+  function handleSortChange(s: SortOption) {
+    setSortBy(s);
+    setShown(PAGE_SIZE);
+  }
 
   return (
     <div className="min-h-screen">
@@ -134,6 +73,7 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
           <div className="flex items-center gap-1">
             <Link to="/leaderboard" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Leaderboard</Link>
             <Link to="/analytics" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">Analytics</Link>
+            <Link to="/my-burns" className="px-3 py-2 text-sm font-medium text-text-muted hover:text-text transition-colors">My Burns</Link>
             <Link
               to="/burn"
               className="ml-2 flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-sm font-bold text-background hover:bg-primary-hover transition-all hover:shadow-lg hover:shadow-primary-glow"
@@ -173,10 +113,9 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
         {/* ─── FILTERS ─── */}
         <div className="flex flex-col sm:flex-row gap-3 mb-8">
-          {/* Method filter pills */}
           <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
             <button
-              onClick={() => setTierFilter("all")}
+              onClick={() => handleFilterChange("all")}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border",
                 tierFilter === "all"
@@ -189,7 +128,7 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
             {Object.entries(MONEY_TYPES).map(([key, tier]) => (
               <button
                 key={key}
-                onClick={() => setTierFilter(key as MoneyType)}
+                onClick={() => handleFilterChange(key as MoneyType)}
                 className={cn(
                   "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all border",
                   tierFilter === key
@@ -203,28 +142,24 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
             ))}
           </div>
 
-          {/* Sort + View Toggle */}
           <div className="flex items-center gap-2 sm:ml-auto">
             <ArrowUpDown className="h-4 w-4 text-text-dim flex-shrink-0" />
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as SortOption)}
+              onChange={(e) => handleSortChange(e.target.value as SortOption)}
               className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-medium text-text outline-none focus:border-primary transition-colors"
             >
               <option value="newest">Newest First</option>
               <option value="biggest">Biggest Amount</option>
             </select>
 
-            {/* View mode toggle */}
             <div className="flex items-center rounded-lg border border-border bg-surface overflow-hidden">
               <button
                 onClick={() => setViewMode("grid")}
                 title="Grid view"
                 className={cn(
                   "flex items-center justify-center w-8 h-8 transition-all",
-                  viewMode === "grid"
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-dim hover:text-text"
+                  viewMode === "grid" ? "bg-primary/10 text-primary" : "text-text-dim hover:text-text"
                 )}
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
@@ -235,9 +170,7 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
                 title="Table view"
                 className={cn(
                   "flex items-center justify-center w-8 h-8 transition-all",
-                  viewMode === "table"
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-dim hover:text-text"
+                  viewMode === "table" ? "bg-primary/10 text-primary" : "text-text-dim hover:text-text"
                 )}
               >
                 <Table2 className="h-3.5 w-3.5" />
@@ -246,69 +179,15 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
           </div>
         </div>
 
-        {/* ─── SKELETON: GRID ─── */}
-        {isReplacing && viewMode === "grid" && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="rounded-xl border border-border bg-surface p-5 animate-pulse">
-                <div className="h-3 w-16 rounded-md bg-surface-elevated mb-3" />
-                <div className="h-9 w-3/4 rounded-md bg-surface-elevated mb-4" />
-                <div className="h-3 w-1/2 rounded-md bg-surface-elevated" />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* ─── SKELETON: TABLE ─── */}
-        {isReplacing && viewMode === "table" && (
-          <div className="rounded-xl border border-border bg-surface overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-surface/80">
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider">Type</th>
-                  <th className="text-right px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider">Amount</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider hidden sm:table-cell">By</th>
-                  <th className="text-right px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider hidden md:table-cell">Message</th>
-                  <th className="text-right px-5 py-3 text-xs font-semibold text-text-dim uppercase tracking-wider">When</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {Array.from({ length: 8 }).map((_, i) => (
-                  <tr key={i} className="animate-pulse">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2.5">
-                        <div className="h-8 w-8 rounded-lg bg-surface-elevated flex-shrink-0" />
-                        <div className="h-3.5 w-16 rounded-md bg-surface-elevated hidden sm:block" />
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="h-4 w-20 rounded-md bg-surface-elevated ml-auto" />
-                    </td>
-                    <td className="px-5 py-3.5 hidden sm:table-cell">
-                      <div className="h-3.5 w-32 rounded-md bg-surface-elevated" />
-                    </td>
-                    <td className="px-5 py-3.5 hidden md:table-cell text-right">
-                      <div className="h-3.5 w-40 rounded-md bg-surface-elevated ml-auto" />
-                    </td>
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="h-3.5 w-14 rounded-md bg-surface-elevated ml-auto" />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
         {/* ─── GRID VIEW ─── */}
-        {!isReplacing && viewMode === "grid" && (
+        {viewMode === "grid" && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {events.map((event) => {
+            {events.map((event: WasteEvent) => {
               const tier = getMoneyType(event.amount);
               return (
                 <button
                   key={event.id}
-                  onClick={() => setSelectedBurn(event)}
+                  onClick={() => setSelectedBurn({ amount: event.amount, method: event.method, nickname: event.nickname, message: event.message, createdAt: event.createdAt })}
                   className="group relative overflow-hidden rounded-xl border border-border bg-surface p-5 card-ember text-left cursor-pointer hover:border-primary/30 transition-colors"
                 >
                   <div className="flex justify-start mb-3">
@@ -327,14 +206,8 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
                         {event.nickname ?? "Anonymous"}
                       </span>
                     </span>
-                    {/* <span
-                      className="text-xs font-medium px-2 py-0.5 rounded-full"
-                      style={{ color: tier.color, backgroundColor: `${tier.color}12` }}
-                    >
-                      {tier.label}
-                    </span> */}
                   </div>
-                  <span className="absolute -bottom-5 -right-4 text-[90px] opacity-[0.12] pointer-events-none select-none transition-transform duration-300 group-hover:scale-110 group-hover:opacity-[0.2] " aria-hidden="true">
+                  <span className="absolute -bottom-5 -right-4 text-[90px] opacity-[0.12] pointer-events-none select-none transition-transform duration-300 group-hover:scale-110 group-hover:opacity-[0.2]" aria-hidden="true">
                     {tier.icon}
                   </span>
                 </button>
@@ -344,7 +217,7 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
         )}
 
         {/* ─── TABLE VIEW ─── */}
-        {!isReplacing && viewMode === "table" && events.length > 0 && (
+        {viewMode === "table" && events.length > 0 && (
           <div className="rounded-xl border border-border bg-surface overflow-hidden">
             <table className="w-full text-sm">
               <thead>
@@ -357,22 +230,20 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {events.map((event) => {
+                {events.map((event: WasteEvent) => {
                   const tier = getMoneyType(event.amount);
                   return (
-                    <tr key={event.id} onClick={() => setSelectedBurn(event)} className="group hover:bg-primary/5 transition-colors cursor-pointer">
+                    <tr
+                      key={event.id}
+                      onClick={() => setSelectedBurn({ amount: event.amount, method: event.method, nickname: event.nickname, message: event.message, createdAt: event.createdAt })}
+                      className="group hover:bg-primary/5 transition-colors cursor-pointer"
+                    >
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2.5">
-                          <span
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-base flex-shrink-0"
-                            style={{ backgroundColor: `${tier.color}15` }}
-                          >
+                          <span className="flex h-8 w-8 items-center justify-center rounded-lg text-base flex-shrink-0" style={{ backgroundColor: `${tier.color}15` }}>
                             {tier.icon}
                           </span>
-                          <span
-                            className="text-xs font-medium px-2 py-0.5 rounded-full hidden xs:inline-flex"
-                            style={{ color: tier.color, backgroundColor: `${tier.color}12` }}
-                          >
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full hidden xs:inline-flex" style={{ color: tier.color, backgroundColor: `${tier.color}12` }}>
                             {tier.label}
                           </span>
                         </div>
@@ -385,9 +256,7 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
                       <td className="px-5 py-3.5 hidden sm:table-cell">
                         <span className="text-xs text-text-muted">
                           {tier.verb} by{" "}
-                          <span className="font-semibold text-text">
-                            {event.nickname ?? "Anonymous"}
-                          </span>
+                          <span className="font-semibold text-text">{event.nickname ?? "Anonymous"}</span>
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-right hidden md:table-cell">
@@ -414,7 +283,7 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
         )}
 
         {/* ─── EMPTY STATE ─── */}
-        {!isReplacing && events.length === 0 && (
+        {events.length === 0 && (
           <div className="text-center py-20">
             <div className="text-5xl mb-4">🔥</div>
             <p className="text-text-muted text-lg">No waste events match your filter.</p>
@@ -423,39 +292,24 @@ export default function Feed({ loaderData }: Route.ComponentProps) {
         )}
 
         {/* ─── LOAD MORE ─── */}
-        {!isReplacing && events.length > 0 && (
+        {events.length > 0 && (
           <div className="flex flex-col items-center gap-3 mt-10">
             <p className="text-xs text-text-dim">
               Showing{" "}
               <span className="font-semibold text-text">{events.length}</span>{" "}
-              {nextCursor ? (
+              {hasMore ? (
                 <>events · <span className="text-text-muted">more available</span></>
               ) : (
                 <>events · <span className="text-text-muted">all caught up</span></>
               )}
             </p>
-            {nextCursor && (
+            {hasMore && (
               <button
-                onClick={handleLoadMore}
-                disabled={isAppending}
-                className={cn(
-                  "flex items-center gap-2 px-5 py-2 rounded-lg border text-sm font-medium transition-all",
-                  isAppending
-                    ? "border-border text-text-dim cursor-not-allowed"
-                    : "border-border bg-surface text-text hover:border-primary hover:text-primary"
-                )}
+                onClick={() => setShown((n) => n + PAGE_SIZE)}
+                className="flex items-center gap-2 px-5 py-2 rounded-lg border border-border bg-surface text-sm font-medium text-text hover:border-primary hover:text-primary transition-all"
               >
-                {isAppending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading…
-                  </>
-                ) : (
-                  <>
-                    <ChevronDown className="h-4 w-4" />
-                    Load More
-                  </>
-                )}
+                <ChevronDown className="h-4 w-4" />
+                Load More
               </button>
             )}
           </div>

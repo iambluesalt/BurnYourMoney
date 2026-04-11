@@ -1,41 +1,57 @@
-import { useState, useEffect } from "react";
-import { Link } from "react-router";
-import { Flame, PartyPopper, ArrowLeft, ArrowRight, Trophy, Share2, Copy, Check, ExternalLink, History } from "lucide-react";
-import { getEventById } from "~/lib/queries.server";
-import { formatINR, getMoneyType } from "~/lib/utils";
-import type { Route } from "./+types/burn-success";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router";
+import { Flame, ArrowLeft, ArrowRight, Trophy, Share2, Copy, Check, ExternalLink, History } from "lucide-react";
+import { formatINR, getMoneyType, getMoneyTypeKey } from "~/lib/utils";
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const url = new URL(request.url);
-  const id = Number(url.searchParams.get("id"));
-
-  if (!id) {
-    return { event: null };
-  }
-
-  const event = getEventById(id);
-  return { event };
+interface LocalBurnEvent {
+  id: string;
+  amount: number;
+  nickname: string | null;
+  message: string | null;
+  method: string;
+  createdAt: string;
 }
 
-export default function BurnSuccess({ loaderData }: Route.ComponentProps) {
-  const { event } = loaderData;
-  const methodInfo = event ? getMoneyType(event.amount) : null;
+export function meta() {
+  return [
+    { title: "It's Gone — BurnYourMoney" },
+    { name: "description", content: "Your money has been successfully burned into the void." },
+  ];
+}
+
+export default function BurnSuccess() {
+  const [params] = useSearchParams();
   const [copied, setCopied] = useState(false);
 
-  // Save this burn ID to localStorage history
-  useEffect(() => {
-    if (!event) return;
-    try {
-      const stored: number[] = JSON.parse(localStorage.getItem("wym_burns") || "[]");
-      const updated = [event.id, ...stored.filter((id) => id !== event.id)].slice(0, 50);
-      localStorage.setItem("wym_burns", JSON.stringify(updated));
-    } catch { /* storage unavailable */ }
-  }, [event?.id]);
+  const id = params.get("id") || `burn_${Date.now()}`;
+  const amount = Number(params.get("amount")) || 0;
+  const nickname = params.get("nickname") || null;
+  const message = params.get("message") || null;
+  const method = params.get("method") || getMoneyTypeKey(amount);
 
-  const receiptUrl = event ? `/burn/receipt/${event.id}` : "";
-  const shareText = event && methodInfo
-    ? `I just ${methodInfo.verb} ${formatINR(event.amount)} on WasteYourMoney. No refunds. No ragrets.`
+  const methodInfo = amount ? getMoneyType(amount) : null;
+  const receiptUrl = amount ? `/burn/receipt/${id}` : "";
+  const shareText = amount && methodInfo
+    ? `I just ${methodInfo.verb} ${formatINR(amount)} on BurnYourMoney. No refunds. No ragrets.`
     : "";
+
+  // Save to localStorage on mount
+  useEffect(() => {
+    if (!amount) return;
+    const event: LocalBurnEvent = {
+      id,
+      amount,
+      nickname: nickname || null,
+      message: message || null,
+      method,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      const stored: LocalBurnEvent[] = JSON.parse(localStorage.getItem("bym_events") || "[]");
+      const updated = [event, ...stored.filter((e) => e.id !== id)].slice(0, 50);
+      localStorage.setItem("bym_events", JSON.stringify(updated));
+    } catch { /* storage unavailable */ }
+  }, []);
 
   function handleCopyLink() {
     const fullUrl = `${window.location.origin}${receiptUrl}`;
@@ -55,7 +71,7 @@ export default function BurnSuccess({ loaderData }: Route.ComponentProps) {
     if (!navigator.share) return;
     const fullUrl = `${window.location.origin}${receiptUrl}`;
     try {
-      await navigator.share({ title: "WasteYourMoney — Burn Receipt", text: shareText, url: fullUrl });
+      await navigator.share({ title: "BurnYourMoney — Burn Receipt", text: shareText, url: fullUrl });
     } catch { /* user cancelled */ }
   }
 
@@ -74,16 +90,13 @@ export default function BurnSuccess({ loaderData }: Route.ComponentProps) {
           <div className="flex h-24 w-24 items-center justify-center rounded-3xl bg-primary/10 border border-primary/20 animate-pulse-fire">
             <Flame className="h-12 w-12 text-primary" />
           </div>
-          {/* <div className="absolute -top-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-gold text-background">
-            <PartyPopper className="h-4 w-4" />
-          </div> */}
         </div>
 
         <h1 className="font-[family-name:var(--font-display)] text-4xl sm:text-5xl font-extrabold mb-4">
           It's <span className="fire-glow-intense">Gone</span>
         </h1>
 
-        {event ? (
+        {amount > 0 ? (
           <>
             <p className="text-text-muted text-lg mb-8">
               You just{" "}
@@ -94,27 +107,27 @@ export default function BurnSuccess({ loaderData }: Route.ComponentProps) {
             {/* Receipt card */}
             <div className="rounded-2xl border border-border bg-surface p-6 mb-6 text-left">
               <div className="text-xs font-bold text-text-dim uppercase tracking-widest mb-4 text-center">
-                Burn Receipt #{event.id}
+                Burn Receipt
               </div>
 
               <div className="text-center mb-4">
                 <span className="text-5xl mb-2 block">{methodInfo!.icon}</span>
                 <div className="font-[family-name:var(--font-display)] text-4xl font-extrabold fire-glow-intense">
-                  {formatINR(event.amount)}
+                  {formatINR(amount)}
                 </div>
                 <div className="text-sm text-text-muted mt-1">
                   {methodInfo!.verb} by{" "}
                   <span className="font-semibold text-text">
-                    {event.nickname || "Anonymous"}
+                    {nickname || "Anonymous"}
                   </span>
                 </div>
               </div>
 
-              {event.message && (
+              {message && (
                 <div className="border-t border-border pt-4 mt-4">
                   <p className="text-xs text-text-dim mb-1">Last words:</p>
                   <p className="text-sm text-text-muted italic">
-                    "{event.message}"
+                    "{message}"
                   </p>
                 </div>
               )}
